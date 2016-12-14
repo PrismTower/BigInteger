@@ -1,5 +1,5 @@
 //Open source under MIT license. https://github.com/PrismTower/BigInteger
-//This is negative demostration of bad coding style which contains quantity of bugs difficult to find.
+//This is negative demostration of bad coding style which contains plenty of bugs difficult to find.
 
 #include "BigInteger.h"
 
@@ -182,7 +182,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		else if (negativity == rhs.negativity)
 		{
 			uint32 commonPiecesCount = (size > rhs.size) ? rhs.size : size;
-			uint32 *l_ptr, *r_ptr, *c_ptr;//lhsµÄÊı×éÖ¸Õë£¬rhsµÄÊı×éÖ¸Õë£¬ÓÃÓÚ±È½ÏµØÖ·µÄÖ¸Õë
+			uint32 *l_ptr, *r_ptr, *c_ptr;//lhsçš„æ•°ç»„æŒ‡é’ˆï¼Œrhsçš„æ•°ç»„æŒ‡é’ˆï¼Œç”¨äºæ¯”è¾ƒåœ°å€çš„æŒ‡é’ˆ
 			if (commonPiecesCount != rhs.size)
 			{//rhs is longer
 				if (capacity < rhs.size) {
@@ -487,7 +487,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	{
 		if (0 == positive_exponent) return BigInteger(1);
 		BigInteger t = this->pow(positive_exponent >> 1);
-		BigInteger tSquared = _absMultiply(t, t);//Èç¹ûÕâÑùĞ´»áÄÚ´æĞ¹Â© t = _absMultiply(t, t); ÏÂÃæÒ²ÓĞÀàËÆµÄÎÊÌâ
+		BigInteger tSquared = _absMultiply(t, t);//å¦‚æœè¿™æ ·å†™ä¼šå†…å­˜æ³„æ¼ t = _absMultiply(t, t); ä¸‹é¢ä¹Ÿæœ‰ç±»ä¼¼çš„é—®é¢˜
 		if (positive_exponent & 1) {
 			BigInteger ret = _absMultiply(*this, tSquared);
 			ret.negativity = this->negativity;
@@ -610,7 +610,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		do {
 			BigInteger y = x.modPow(x, *this);
 			if (y == bigInteger_1 && x != bigInteger_1 && x != thisMinus1) return false;
-			x.clearToZero();//²»¼ÓÕâÒ»¾ä¾ÍÄÚ´æĞ¹Â©£¡µ÷ÓÃÒÆ¶¯¹¹Ôìº¯ÊıÖ®Ç°ÒªÔõÃ´Îö¹¹Ô­¶ÔÏóÄØ£¿
+			x.clearToZero();//ä¸åŠ è¿™ä¸€å¥å°±å†…å­˜æ³„æ¼ï¼è°ƒç”¨ç§»åŠ¨æ„é€ å‡½æ•°ä¹‹å‰è¦æ€ä¹ˆææ„åŸå¯¹è±¡å‘¢ï¼Ÿ
 			x = std::move(y);
 			u <<= 1;
 		} while (u < *this);
