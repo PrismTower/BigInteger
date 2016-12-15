@@ -43,9 +43,22 @@ bool MersennePrimeTester(uint32 p)
 	base <<= p;
 	base -= 1;
 	std::cout << base << std::endl;
-	bool testResult = base.isProbablePrime();
+	bool testResult = base.isPrime(64);
 	std::cout << "This number is " << (testResult ? "" : "NOT ") << "a prime." << std::endl;
 	return testResult;
+}
+
+BigInteger get_a_primeNumber(uint32 bitLength)
+{
+	BigInteger candidate;
+	candidate.setLowerBitsToRandom(bitLength);
+	if (candidate.testBit(0) == false) candidate += 1;
+	//cout << "initial candidate: " << endl << candidate << endl;
+	do {
+		if (candidate.isPrime(64)) break;
+		candidate += 2;
+	} while (true);
+	return candidate;
 }
 
 int main()
@@ -58,6 +71,10 @@ int main()
 	cout << "To calculate factorial(n), please input n here: ";
 	cin >> n;
 	cout << "factorial(" << n << ") = " << factorial(n) << endl;
+
+	cout << "To generate a random prime number of bitLength n, please input n here: ";
+	cin >> n;
+	cout << "We get a `probable` prime number : " << endl << get_a_primeNumber(n) << endl;
 
 	_CrtDumpMemoryLeaks();
 	system("pause");

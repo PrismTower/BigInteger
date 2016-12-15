@@ -5,6 +5,8 @@
 
 namespace UPmath
 {
+	std::random_device gRandomDevice;
+
 	BigInteger::BigInteger(const BigInteger& source)
 	{
 		if (this == &source) return;
@@ -107,6 +109,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	BigInteger::BigInteger(const std::string& str) :
 		BigInteger((str.length() >= 2 && str[0] == '0' && (('\x5F' & str[1]) == 'X')), str) { }
 
+	//things will go wrong if you _push 0 without _pushing a positive number in the end
 	void BigInteger::_push(const uint32 value)
 	{
 		if (capacity > size)
@@ -236,14 +239,12 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		return *this;
 	}
 
-	BigInteger& BigInteger::clearToZero()
+	const BigInteger& BigInteger::clearToZero()
 	{
 		negativity = false;
 		size = capacity = 0;
-		if (_exclusivelyMemoryAllocated) {
-			delete[] _valPtr;
-			_valPtr = nullptr;
-		}
+		if (_exclusivelyMemoryAllocated) delete[] _valPtr;
+		_valPtr = nullptr;
 		return *this;
 	}
 
@@ -567,42 +568,55 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		return _euclidGcd(b, a);
 	}
 
-	//Deterministic Robin-Miller Primality Test
-	//for integers contain more than 1000 bits this function could be excessively slow and 
-	//in that case it is a ! LITTLE BIT ! better to invoke `isProbablePrime` which is actually a Monte-Carlo method
-	bool BigInteger::isPrime() const
-	{// 2^127 - 1 = 7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+	//Set `confidenceFactor` <= 0 to run Deterministic Robin-Miller Primality Test.
+	//When testing integers contain more than 1000 bits, it makes it a LITTLE BIT faster to 
+	//set `confidenceFactor` to a positive number at the expense of 
+	//the probability of getting a wrong result is no more than 2^(-confidenceFactor)
+	bool BigInteger::isPrime(int confidenceFactor) const
+	{
 		if (0 == size || negativity) return false;
 		if (_valPtr[0] <= 3) return (_valPtr[0] > 1);
 		if ((_valPtr[0] & 1) == 0) return false;
 		BigInteger thisMinus1(*this); thisMinus1 += BigInteger(-1);
 		BigInteger a(1);
-		if (size <= 2)
+		double ln_n = log(size * 32);
+		uint32 maxTesterForDeterministicResult = (uint32)(2.0 * ln_n * ln_n);
+		if (size <= 2) goto qwordTest;
+		if (maxTesterForDeterministicResult <= confidenceFactor) goto drmpt;
+		if (confidenceFactor > 0)
 		{
-			const char testNumbers[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
+qwordTest:	const char testNumbers[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
 			int index = 0;
 			do {
 				a._valPtr[0] = testNumbers[index];
 				if (a.compareAbsoluteValueTo(thisMinus1) >= 0) return true;
 				if (!_isStrongProbablePrime(a, thisMinus1))	return false;
 			} while (++index < sizeof(testNumbers) / sizeof(char));
+			if (size > 2) {
+				confidenceFactor -= (sizeof(testNumbers) / sizeof(char));
+				do {
+					uint32 randomNumber;
+					std::mt19937 mt(gRandomDevice());
+					do { randomNumber = mt(); } while (randomNumber < 2);
+					a._valPtr[0] = randomNumber;
+					if (!_isStrongProbablePrime(a, thisMinus1))	return false;
+				} while (--confidenceFactor > 0);
+			}
 		}
 		else
 		{
-			double ln_n = log(size * 32);
-			uint32 maxTester = (uint32)(2.0 * ln_n * ln_n);
-			uint32 base = 2;
+drmpt:		uint32 base = 2;
 			do {
 				a._valPtr[0] = base;
 				if (!_isStrongProbablePrime(a, thisMinus1))	return false;
-			} while (++base <= maxTester);
+			} while (++base <= maxTesterForDeterministicResult);
 		}
 		return true;
 	}
 
 	bool BigInteger::_isStrongProbablePrime(const BigInteger& a, const BigInteger& thisMinus1) const
 	{
-		BigInteger bigInteger_1(1);
+		const BigInteger bigInteger_1(1);
 		if (a.modPow(thisMinus1, *this) != bigInteger_1) return false;
 		BigInteger u(thisMinus1);
 		do { u >>= 1; } while ((u._valPtr[0] & 1) == 0);
@@ -615,26 +629,6 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			u <<= 1;
 		} while (u < *this);
 		if (x != 1) return false;
-		return true;
-	}
-
-	bool BigInteger::isProbablePrime(int confidenceFactor) const
-	{
-		if (0 == size || negativity) return false;
-		if (_valPtr[0] <= 3) return (_valPtr[0] > 1);
-		if ((_valPtr[0] & 1) == 0) return false;
-		BigInteger thisMinus1(*this); thisMinus1 += BigInteger(-1);
-		BigInteger a(1);
-		if (size <= 2) return this->isPrime();
-		do {
-			uint32 randomNumber;
-			if (RAND_MAX <= 0x7fff)
-				randomNumber = (rand() << 16) | rand();
-			else
-				randomNumber = rand();
-			a._valPtr[0] = randomNumber;
-			if (!_isStrongProbablePrime(a, thisMinus1))	return false;
-		} while (--confidenceFactor > 0);
 		return true;
 	}
 
@@ -657,6 +651,35 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			memcpy(dst, _valPtr, integerSizeInByte);
 			memset(dst + integerSizeInByte, 0, writingSize - integerSizeInByte);
 		}
+	}
+
+	void BigInteger::setLowerBitsToRandom(uint32 bitLength)
+	{
+		std::mt19937 mt(gRandomDevice());
+		const uint32 bitsOfDWORD = sizeof(uint32) * 8;
+		if (bitLength > capacity * bitsOfDWORD)
+		{
+			size = (bitLength + bitsOfDWORD - 1) / bitsOfDWORD;
+			if (nullptr == (_valPtr = new uint32[capacity = _calcMinimumCapacity(size)]))
+				throw std::bad_alloc();
+			memset(_valPtr + (size - 1) * sizeof(uint32), 0, (capacity - size + 1) * sizeof(uint32));
+		}
+		uint32 i = 0;
+		while (bitLength >= bitsOfDWORD) {
+			_valPtr[i++] ^= mt();
+			bitLength -= bitsOfDWORD;
+		}
+		if (bitLength) _valPtr[i] ^= (mt() & ((1 << bitLength) - 1));
+		_setSize(size);
+	}
+
+	bool BigInteger::testBit(uint32 bitPos) const
+	{
+		const uint32 bitsOfDWORD = sizeof(uint32) * 8;
+		uint32 dwordIndex = bitPos / bitsOfDWORD;
+		if (dwordIndex >= size) return false;
+		dwordIndex %= bitsOfDWORD;
+		return 0 != (_valPtr[dwordIndex] & (1 << dwordIndex));
 	}
 
 }//namespace UPMath

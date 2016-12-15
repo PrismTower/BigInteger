@@ -3,9 +3,10 @@
 
 #pragma once
 #include <iostream>
-#include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <string>
+#include <random>
 
 namespace UPmath
 {
@@ -15,11 +16,13 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 	template <class T> const T operator-(const T& lhs, const T& rhs) { return T(lhs) -= rhs; }
 	template <class T> const T operator>>(const T& lhs, const uint32 shift) { return T(lhs) >>= shift; }
 	template <class T> const T operator<<(const T& lhs, const uint32 shift) { return T(lhs) <<= shift; }
+
+	extern std::random_device gRandomDevice;
 	
 	class BigInteger
 	{
 	public:
-		uint32 capacity = 0, size = 0;//in QWORD (NOT byte)
+		uint32 capacity = 0, size = 0;//in DWORD (NOT byte)
 		bool negativity = false;//*this <= 0 when `negativity` is true and >= 0 when it is false
 
 		BigInteger();
@@ -42,7 +45,9 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 		char* toHexadecimalCharArray() const;
 		bool* convertAbsToBinaryArray(size_t* out_digitsSize) const;//from lower digit to higher. eg: 4 -> 001
 
-		BigInteger& clearToZero();
+		void setLowerBitsToRandom(uint32 bitLength);
+		bool testBit(uint32 bitPos) const;
+		const BigInteger& clearToZero();
 		int compareAbsoluteValueTo(const BigInteger&) const;
 		int compareTo(const BigInteger&) const;
 		bool operator==(const BigInteger& rhs) { return compareTo(rhs) == 0; }
@@ -66,8 +71,9 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 		struct _EEAstruct;
 		static BigInteger gcd(const BigInteger& a, const BigInteger& b);
 		BigInteger modInverse(const BigInteger& m) const;//return BigInteger(0) when the inverse doesnot exist
-		bool isPrime() const;
-		bool isProbablePrime(int confidenceFactor = 64) const;
+		bool isPrime(int confidenceFactor = -1) const;
+		//In order to make it convenient to implement multi-thread primality test, I decide to set this func `public`.
+		bool _isStrongProbablePrime(const BigInteger& a, const BigInteger& thisMinus1) const;
 
 	private:
 		bool _exclusivelyMemoryAllocated = true;
@@ -81,7 +87,6 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 		BigInteger _fastModPow(bool* binaryArrayOfExponent, size_t digitsSizeOfExponent, const BigInteger& m) const;
 		static _EEAstruct _extendedEuclid(BigInteger* a, BigInteger* b);
 		static BigInteger* _euclidGcd(BigInteger* a, BigInteger* b);
-		bool _isStrongProbablePrime(const BigInteger& a, const BigInteger& thisMinus1) const;
 
 		inline BigInteger(uint32* val, uint32 size_) : _exclusivelyMemoryAllocated(false), _valPtr(val)
 		{ 
