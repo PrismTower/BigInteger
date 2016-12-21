@@ -10,6 +10,7 @@
 
 namespace UPmath
 {
+#define BITS_OF_DWORD 32
 	typedef unsigned int uint32;
 static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 	template <class T> const T operator+(const T& lhs, const T& rhs) { return T(lhs) += rhs; }
@@ -32,13 +33,14 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 		BigInteger(long long);
 		BigInteger(unsigned long long);
 		BigInteger(double);
-		BigInteger(void* dataPtr, size_t dataSize);//for cryptography
+		BigInteger(const void* dataPtr, size_t dataSize);//for cryptography
 		BigInteger(const BigInteger& source);
-		const BigInteger& operator=(BigInteger&& source);
+		const BigInteger& operator=(const BigInteger& source);
 		BigInteger(BigInteger&& source);
+		const BigInteger& operator=(BigInteger&& source);
 		~BigInteger() { if (_exclusivelyMemoryAllocated) delete[] _valPtr; }
 
-		int intValue() const;//truncate
+		int intValue() const;//modular 0x7FFFFFFF
 		double doubleValue() const;
 		void saveBytesToBuffer(char* dst, size_t writingSize) const;
 		const std::string toString() const;
@@ -88,7 +90,7 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 		static _EEAstruct _extendedEuclid(BigInteger* a, BigInteger* b);
 		static BigInteger* _euclidGcd(BigInteger* a, BigInteger* b);
 
-		inline BigInteger(uint32* val, uint32 size_) : _exclusivelyMemoryAllocated(false), _valPtr(val)
+		inline BigInteger(uint32 size_, uint32* val) : _exclusivelyMemoryAllocated(false), _valPtr(val)
 		{ 
 			_setSize(size_);
 			capacity = _calcMinimumCapacity(size);
@@ -96,12 +98,12 @@ static_assert(sizeof(uint32)==4, "sizeof(uint32) must be 4 bytes!");
 		inline BigInteger _higherHalfBits() const
 		{
 			uint32 halfCapacity = capacity >> 1;
-			return BigInteger(_valPtr + halfCapacity, (size < halfCapacity) ? 0 : size - halfCapacity);
+			return BigInteger((size < halfCapacity) ? 0 : size - halfCapacity, _valPtr + halfCapacity);
 		}
 		inline BigInteger _lowerHalfBits() const
 		{
 			uint32 halfCapacity = capacity >> 1;
-			return BigInteger(_valPtr, (size < halfCapacity) ? size : halfCapacity);
+			return BigInteger((size < halfCapacity) ? size : halfCapacity, _valPtr);
 		}
 	};
 

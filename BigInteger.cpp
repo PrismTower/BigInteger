@@ -7,45 +7,9 @@ namespace UPmath
 {
 	std::random_device gRandomDevice;
 
-	BigInteger::BigInteger(const BigInteger& source)
-	{
-		if (this == &source) return;
-		negativity = source.negativity;
-		size = source.size;
-		capacity = _calcMinimumCapacity(size);
-		if (nullptr == (_valPtr = new uint32[capacity]))
-			throw std::bad_alloc();
-		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
-		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
-			*_temptr = *_souptr;
-		_comptr = _valPtr + capacity;
-		while (_temptr < _comptr) *(_temptr++) = 0;
-	}
-
-	const BigInteger& BigInteger::operator=(BigInteger&& source)
-	{
-		_valPtr = source._valPtr;
-		_exclusivelyMemoryAllocated = source._exclusivelyMemoryAllocated;
-		negativity = source.negativity;
-		capacity = source.capacity;
-		size = source.size;
-		source._valPtr = nullptr;
-		return *this;
-	}
-
-	BigInteger::BigInteger(BigInteger&& source)
-	{
-		_valPtr = source._valPtr;
-		_exclusivelyMemoryAllocated = source._exclusivelyMemoryAllocated;
-		negativity = source.negativity;
-		capacity = source.capacity;
-		size = source.size;
-		source._valPtr = nullptr;
-	}
-
 	BigInteger::BigInteger() { }
 
-	BigInteger::BigInteger(double d) :BigInteger(static_cast<long long>(d)) { }
+	BigInteger::BigInteger(double d) : BigInteger(static_cast<long long>(d)) { }
 
 	BigInteger::BigInteger(int num)
 	{
@@ -61,7 +25,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		_valPtr = new uint32[capacity = 2];
 		if (num < 0) { negativity = true; num = -num; }
 		if (num) _valPtr[0] = static_cast<uint32>(num), ++size;
-		num >>= 32;
+		num >>= BITS_OF_DWORD;
 		if (num) _valPtr[1] = static_cast<uint32>(num), ++size;
 	}
 
@@ -69,7 +33,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	{
 		_valPtr = new uint32[capacity = 2];
 		if (num) _valPtr[0] = static_cast<uint32>(num), ++size;
-		num >>= 32;
+		num >>= BITS_OF_DWORD;
 		if (num) _valPtr[1] = static_cast<uint32>(num), ++size;
 	}
 
@@ -104,6 +68,59 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			_setSize(capacity);
 		}
 		negativity = neg_;
+	}
+
+	BigInteger::BigInteger(const BigInteger& source)
+	{
+		if (this == &source) return;
+		negativity = source.negativity;
+		size = source.size;
+		capacity = _calcMinimumCapacity(size);
+		if (nullptr == (_valPtr = new uint32[capacity]))
+			throw std::bad_alloc();
+		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
+		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
+			*_temptr = *_souptr;
+		_comptr = _valPtr + capacity;
+		while (_temptr < _comptr) *(_temptr++) = 0;
+	}
+
+	const BigInteger& BigInteger::operator=(const BigInteger& source)
+	{
+		if (this == &source) return *this;
+		this->clearToZero();
+		negativity = source.negativity;
+		size = source.size;
+		capacity = _calcMinimumCapacity(size);
+		if (nullptr == (_valPtr = new uint32[capacity]))
+			throw std::bad_alloc();
+		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
+		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
+			*_temptr = *_souptr;
+		_comptr = _valPtr + capacity;
+		while (_temptr < _comptr) *(_temptr++) = 0;
+		return *this;
+	}
+
+	const BigInteger& BigInteger::operator=(BigInteger&& source)
+	{
+		_valPtr = source._valPtr;
+		_exclusivelyMemoryAllocated = source._exclusivelyMemoryAllocated;
+		negativity = source.negativity;
+		capacity = source.capacity;
+		size = source.size;
+		source._valPtr = nullptr;
+		return *this;
+	}
+
+	BigInteger::BigInteger(BigInteger&& source)
+	{
+		_valPtr = source._valPtr;
+		_exclusivelyMemoryAllocated = source._exclusivelyMemoryAllocated;
+		negativity = source.negativity;
+		capacity = source.capacity;
+		size = source.size;
+		source._valPtr = nullptr;
 	}
 
 	BigInteger::BigInteger(const std::string& str) :
@@ -233,7 +250,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	const BigInteger& BigInteger::operator-=(const BigInteger& rhs)
 	{
 		if (this == &rhs) return this->clearToZero();
-		BigInteger signModified_rhs(rhs._valPtr, rhs.size);
+		BigInteger signModified_rhs(rhs.size, rhs._valPtr);
 		signModified_rhs.negativity = !rhs.negativity;
 		*this += signModified_rhs;
 		return *this;
@@ -261,7 +278,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			} while (i < size);
 			for (a += size; i < a; ++i) _valPtr[i] = 0;
 		}
-		a = shift & 31;
+		a = shift & (BITS_OF_DWORD - 1);
 		if (a && size)
 		{
 			uint32 pm1 = size - 1;
@@ -276,7 +293,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	{
 		if (size)
 		{
-			uint32 a = shift >> 5, b = shift & 31;
+			uint32 a = shift >> 5, b = shift & (BITS_OF_DWORD - 1);
 			bool newMemAlloced = false;
 			if (b) ++a;
 			if (a) {
@@ -308,16 +325,17 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 
 	BigInteger operator*(const BigInteger& lhs, const BigInteger& rhs)
 	{//multipication
-		BigInteger capacityModified_lhs(lhs._valPtr, lhs.size);
-		BigInteger capacityModified_rhs(rhs._valPtr, rhs.size);
+		BigInteger capacityModified_lhs(lhs.size, lhs._valPtr);
+		BigInteger capacityModified_rhs(rhs.size, rhs._valPtr);
 		BigInteger ret = BigInteger::_absMultiply(capacityModified_lhs, capacityModified_rhs);
 		ret.negativity = (lhs.negativity != rhs.negativity);
 		return ret;
 	}
 
+	//编译器优化后相当于 _absMultiply(BigInteger& out_result, const BigInteger& lhs, const BigInteger& rhs)
 	BigInteger BigInteger::_absMultiply(const BigInteger& lhs, const BigInteger& rhs)
 	{
-		if (!lhs.size || !rhs.size) return BigInteger();
+		if ((!lhs.size) | (!rhs.size)) return BigInteger();
 		if (lhs.capacity != rhs.capacity)
 		{
 			const BigInteger& longer = (lhs.capacity >= rhs.capacity) ? lhs : rhs;
@@ -368,11 +386,12 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		}
 		BigInteger ret;
 		ret.size = 1 + (leftMostBit >> 5);
-		ret._valPtr = new uint32[ret.capacity = _calcMinimumCapacity(ret.size)];
+		if (nullptr == (ret._valPtr = new uint32[ret.capacity = _calcMinimumCapacity(ret.size)]))
+			throw std::bad_alloc();
 		for (uint32 piece = 0; pow < leftMostBit; ++piece)
 		{
 			ret._valPtr[piece] = 0;
-			for (uint32 bi = 0; bi < 32; ++bi)
+			for (uint32 bi = 0; bi < BITS_OF_DWORD; ++bi)
 				ret._valPtr[piece] |= ((uint32)binaryList[++pow] << bi);
 		}
 		delete[] binaryList;
@@ -398,7 +417,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	int BigInteger::intValue() const
 	{
 		if (size == 0) return 0;
-		int ret = _valPtr[0];
+		int ret = _valPtr[0] & 0x7FFFFFFF;
 		return negativity ? -ret : ret;
 	}
 
@@ -444,7 +463,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			if (negativity) *(c++) = '-';
 			uint32 *v_ptr;
 			for (v_ptr = _valPtr + size; v_ptr > _valPtr; ) {
-				uint32 piece = *(--v_ptr), shifting = 32;
+				uint32 piece = *(--v_ptr), shifting = BITS_OF_DWORD;
 				do {
 					shifting -= 4;
 					uint32 letter = (piece >> shifting) & 0xF;
@@ -466,8 +485,9 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		size_t digitsSize = this->size * (size_t)32;
 		bool* ret = new bool[digitsSize];
 		if (nullptr == ret) throw std::bad_alloc();
-		for (uint32 i = 0, pieceIndex = 0; pieceIndex < this->size; ++pieceIndex, i += 32)
+		for (uint32 i = 0, pieceIndex = 0; pieceIndex < this->size; ++pieceIndex, i += BITS_OF_DWORD)
 		{
+static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 			uint32 piece = this->_valPtr[pieceIndex];
 			ret[i + 0] = (piece & (1 << 0)) != 0; ret[i + 1] = (piece & (1 << 1)) != 0;	ret[i + 2] = (piece & (1 << 2)) != 0; ret[i + 3] = (piece & (1 << 3)) != 0;
 			ret[i + 4] = (piece & (1 << 4)) != 0; ret[i + 5] = (piece & (1 << 5)) != 0;	ret[i + 6] = (piece & (1 << 6)) != 0; ret[i + 7] = (piece & (1 << 7)) != 0;
@@ -515,6 +535,25 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 
 	BigInteger BigInteger::_fastModPow(bool* binaryArrayOfExponent, size_t digitsSizeOfExponent, const BigInteger& m) const
 	{
+		BigInteger result(1), newResult;
+		BigInteger tSquared(*this), thisPow_i;
+		for (size_t i = 0; i < digitsSizeOfExponent; ++i) {
+			thisPow_i = std::move(tSquared);
+			if (binaryArrayOfExponent[i]) {
+				newResult = _absMultiply(result, thisPow_i);
+				newResult.absDivideAndSetThisToRemainder(m);
+				result.clearToZero();
+				result = std::move(newResult);
+			}
+			tSquared = _absMultiply(thisPow_i, thisPow_i);
+			tSquared.absDivideAndSetThisToRemainder(m);
+			thisPow_i.clearToZero();
+		}
+		return result;
+	}
+
+	/*BigInteger BigInteger::_fastModPow(bool* binaryArrayOfExponent, size_t digitsSizeOfExponent, const BigInteger& m) const
+	{
 		if (digitsSizeOfExponent == 1) return binaryArrayOfExponent[0] ? BigInteger(*this) : BigInteger(1);
 		BigInteger t = this->_fastModPow(binaryArrayOfExponent + 1, digitsSizeOfExponent - 1, m);
 		BigInteger tSquared = _absMultiply(t, t);
@@ -525,7 +564,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			return ret;
 		}
 		return tSquared;
-	}
+	}*/
 
 	//return BigInteger(0) when the inverse doesnot exist
 	BigInteger BigInteger::modInverse(const BigInteger& m) const
@@ -579,8 +618,8 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		if ((_valPtr[0] & 1) == 0) return false;
 		BigInteger thisMinus1(*this); thisMinus1 += BigInteger(-1);
 		BigInteger a(1);
-		double ln_n = log(size * 32);
-		uint32 maxTesterForDeterministicResult = (uint32)(2.0 * ln_n * ln_n);
+		double ln_n = log(size * BITS_OF_DWORD);
+		int maxTesterForDeterministicResult = (int)(2.0 * ln_n * ln_n);
 		if (size <= 2) goto qwordTest;
 		if (maxTesterForDeterministicResult <= confidenceFactor) goto drmpt;
 		if (confidenceFactor > 0)
@@ -609,7 +648,7 @@ drmpt:		uint32 base = 2;
 			do {
 				a._valPtr[0] = base;
 				if (!_isStrongProbablePrime(a, thisMinus1))	return false;
-			} while (++base <= maxTesterForDeterministicResult);
+			} while (++base <= (uint32)maxTesterForDeterministicResult);
 		}
 		return true;
 	}
@@ -633,13 +672,13 @@ drmpt:		uint32 base = 2;
 	}
 
 	//for cryptography
-	BigInteger::BigInteger(void* dataPtr, size_t dataSize)
+	BigInteger::BigInteger(const void* dataPtr, size_t dataSize)
 	{
 		size = (dataSize + sizeof(uint32) - 1) / sizeof(uint32);
 		if (nullptr == (_valPtr = new uint32[capacity = _calcMinimumCapacity(size)]))
 			throw std::bad_alloc();
 		memcpy(_valPtr, dataPtr, dataSize);
-		memset(_valPtr + dataSize, 0, capacity * sizeof(uint32) - dataSize);
+		memset(reinterpret_cast<char*>(_valPtr) + dataSize, 0, capacity * sizeof(uint32) - dataSize);
 		_setSize(size);
 	}
 
@@ -656,18 +695,17 @@ drmpt:		uint32 base = 2;
 	void BigInteger::setLowerBitsToRandom(uint32 bitLength)
 	{
 		std::mt19937 mt(gRandomDevice());
-		const uint32 bitsOfDWORD = sizeof(uint32) * 8;
-		if (bitLength > capacity * bitsOfDWORD)
+		if (bitLength > capacity * BITS_OF_DWORD)
 		{
-			size = (bitLength + bitsOfDWORD - 1) / bitsOfDWORD;
+			size = (bitLength + BITS_OF_DWORD - 1) / BITS_OF_DWORD;
 			if (nullptr == (_valPtr = new uint32[capacity = _calcMinimumCapacity(size)]))
 				throw std::bad_alloc();
-			memset(_valPtr + (size - 1) * sizeof(uint32), 0, (capacity - size + 1) * sizeof(uint32));
+			memset(_valPtr + size - 1, 0, (capacity - size + 1) * sizeof(uint32));
 		}
 		uint32 i = 0;
-		while (bitLength >= bitsOfDWORD) {
+		while (bitLength >= BITS_OF_DWORD) {
 			_valPtr[i++] ^= mt();
-			bitLength -= bitsOfDWORD;
+			bitLength -= BITS_OF_DWORD;
 		}
 		if (bitLength) _valPtr[i] ^= (mt() & ((1 << bitLength) - 1));
 		_setSize(size);

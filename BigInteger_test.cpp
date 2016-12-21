@@ -72,6 +72,12 @@ int main()
 	cin >> n;
 	cout << "factorial(" << n << ") = " << factorial(n) << endl;
 
+	cout << "To calculate a^n, please input `a` and `n` here: ";
+	string str;
+	cin >> str >> n;
+	BigInteger base(false, str);
+	cout << base << " ^ " << n << " = " << base.pow(n) << endl;
+	
 	cout << "To generate a random prime number of bitLength n, please input n here: ";
 	cin >> n;
 	cout << "We get a `probable` prime number : " << endl << get_a_primeNumber(n) << endl;
