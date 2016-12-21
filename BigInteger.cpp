@@ -180,7 +180,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			return negativity ? -1 : 1;
 		}
 		int result = compareAbsoluteValueTo(rhs);
-		return negativity ? result : -result;
+		return negativity ? -result : result;
 	}
 
 	void BigInteger::_absSubtract(const BigInteger& rhs)
