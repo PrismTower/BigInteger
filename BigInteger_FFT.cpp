@@ -26,33 +26,29 @@ namespace UPmath
 		constexpr bool _IS_LITTLE_ENDIAN() { return _EndianCheckUnion.char_value[0] == 0x44; }
 
 		struct Coefficients {
-			unsigned short *start, *end;
+			unsigned short *begin, *end;
 			static_assert(sizeof(unsigned short) == FFT_WORD_SIZE, "Length of FFT_WORD is 16bits, which differs from sizeof(unsigned short).");
 			uint32 interval;
 			uint32 n;
-			Coefficients(const BigInteger& src, uint32 n) : interval(1), n(n)
-			{
-				start = reinterpret_cast<unsigned short*>(src._valPtr);
-				end = reinterpret_cast<unsigned short*>(src._valPtr + src.size);
-			}
+			Coefficients(const BigInteger& src, uint32 n) : interval(1), n(n) { src._getBeginAndEndOfData(begin, end); }
 			inline const Complex getComplexNumber() const
 			{
 				if (_IS_LITTLE_ENDIAN())
-					return Complex(start < end ? (double)*start : 0.0);
+					return Complex(begin < end ? (double)*begin : 0.0);
 				else {//WARNING: no tests has been done for big endian machines.
-					if (start >= end) return Complex();
-					if ((uint32)start & FFT_WORD_SIZE) return *(start - FFT_WORD_SIZE);
-					return *(start + FFT_WORD_SIZE);
+					if (begin >= end) return Complex();
+					if ((uint32)begin & FFT_WORD_SIZE) return *(begin - FFT_WORD_SIZE);
+					return *(begin + FFT_WORD_SIZE);
 				}
 			}
 		};
 
 		struct ValueRepresentation {
-			Complex* start;
+			Complex* begin;
 			uint32 interval;
 			uint32 n;
-			ValueRepresentation(Complex* src, uint32 n) : interval(1), n(n), start(src) { }
-			inline const Complex& getComplexNumber() const { return *start; }
+			ValueRepresentation(Complex* src, uint32 n) : interval(1), n(n), begin(src) { }
+			inline const Complex& getComplexNumber() const { return *begin; }
 		};
 
 		Complex kRootsOfUnity[FFT_MAX_N];
@@ -76,7 +72,7 @@ namespace UPmath
 			A.interval <<= 1;
 			A.n >>= 1;
 			FFT(buffer, dst, A, getIndexOfPower(omegaIndex, 2));//A even
-			A.start += src.interval;
+			A.begin += src.interval;
 			FFT(buffer + A.n, dst, A, getIndexOfPower(omegaIndex, 2));//A odd
 			for (uint32 j = 0; j < A.n; ++j) {
 				Complex wjAo = Complex::multiply(kRootsOfUnity[getIndexOfPower(omegaIndex, j)], (buffer + A.n)[j]);

@@ -91,6 +91,13 @@ namespace UPmath
 #ifdef FFT_MULTIPLICATION
 #define FFT_MAX_N 1024u
 #define FFT_WORD_BITLEN 16
+	public:
+		inline void _getBeginAndEndOfData(unsigned short* &begin, unsigned short* &end) const
+		{ 
+			begin = reinterpret_cast<unsigned short*>(_valPtr);
+			end = reinterpret_cast<unsigned short*>(_valPtr + size);
+		}
+	private:
 		static bool _isRootsOfUnitySet;
 		static void _FFTMultiply(BigInteger& dst, const BigInteger& lhs, const BigInteger& rhs, void* buffer = nullptr);
 #endif
