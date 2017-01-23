@@ -9,8 +9,6 @@ namespace UPmath
 
 	BigInteger::BigInteger() { }
 
-	BigInteger::BigInteger(double d) : BigInteger(static_cast<long long>(d)) { }
-
 	BigInteger::BigInteger(int num)
 	{
 		if (num) {
@@ -19,18 +17,10 @@ namespace UPmath
 		}
 	}
 
-	BigInteger::BigInteger(long long num)
-	{
-static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInteger(long long)");
-		_valPtr = new uint32[capacity = 2];
-		if (num < 0) { negativity = true; num = -num; }
-		if (num) _valPtr[0] = static_cast<uint32>(num), ++size;
-		num >>= BITS_OF_DWORD;
-		if (num) _valPtr[1] = static_cast<uint32>(num), ++size;
-	}
-
+	BigInteger::BigInteger(long long num) : BigInteger((unsigned long long)(num < 0 ? -num : num)) { negativity = (num < 0); }
 	BigInteger::BigInteger(unsigned long long num)
 	{
+		static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInteger(long long)");
 		_valPtr = new uint32[capacity = 2];
 		if (num) _valPtr[0] = static_cast<uint32>(num), ++size;
 		num >>= BITS_OF_DWORD;
@@ -65,7 +55,6 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 				if (size == 0 && t) ++size;
 				++i;
 			}
-			_setSize(capacity);
 		}
 		negativity = neg_;
 	}
@@ -75,9 +64,8 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		if (this == &source) return;
 		negativity = source.negativity;
 		size = source.size;
-		capacity = _calcMinimumCapacity(size);
-		if (nullptr == (_valPtr = new uint32[capacity]))
-			throw std::bad_alloc();
+		capacity = _getMinimumCapacity(size);
+		_valPtr = new uint32[capacity];
 		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
 		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
 			*_temptr = *_souptr;
@@ -91,9 +79,8 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		this->clearToZero();
 		negativity = source.negativity;
 		size = source.size;
-		capacity = _calcMinimumCapacity(size);
-		if (nullptr == (_valPtr = new uint32[capacity]))
-			throw std::bad_alloc();
+		capacity = _getMinimumCapacity(size);
+		_valPtr = new uint32[capacity];
 		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
 		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
 			*_temptr = *_souptr;
@@ -132,24 +119,14 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		if (capacity > size)
 			_valPtr[size++] = value;
 		else {
-			uint32 *newptr, *temptr;
-			if (nullptr == (newptr = new uint32[capacity <<= 1]))
-				throw std::bad_alloc();
-			temptr = newptr + size;
+			uint32* newptr = new uint32[capacity <<= 1];
+			uint32* temptr = newptr + size;
 			while (newptr < temptr)	*(newptr++) = *(_valPtr++);
 			*newptr = value;
 			delete[] (_valPtr -= size);
 			temptr = (_valPtr = newptr - size++) + capacity;
 			while (++newptr < temptr) *newptr = 0;
 		}
-	}
-
-	uint32 BigInteger::_calcMinimumCapacity(uint32 size_)
-	{
-		if (size_ == 0) return 0;
-		uint32 minCap = 1;
-		while (size_ > minCap) minCap <<= 1;
-		return minCap;
 	}
 
 	void BigInteger::_setSize(uint32 maxPossibleSize)
@@ -159,7 +136,18 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 				if (*ptr) break;
 	}
 
+	unsigned char BigInteger::_requiredCapacityList[129] = 	{ 
+		0, 1, 2, 4, 4, 8, 8, 8, 8, 16, 16, 16, 16, 16, 16, 16, 16, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 
+		64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 
+		128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 
+		128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128 };
 
+	uint32 BigInteger::_calcMinimumCapacity(uint32 size_)
+	{
+		uint32 minCap = (size_ < sizeof(_requiredCapacityList)) ? 1 : 256;
+		while (size_ > minCap) minCap <<= 1;
+		return minCap;
+	}
 
 	int BigInteger::compareAbsoluteValueTo(const BigInteger& rhs) const
 	{
@@ -206,8 +194,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			if (commonPiecesCount != rhs.size)
 			{//rhs is longer
 				if (capacity < rhs.size) {
-					uint32* newptr = new uint32[capacity = _calcMinimumCapacity(rhs.size)];
-					if (nullptr == newptr) throw std::bad_alloc();
+					uint32* newptr = new uint32[capacity = _getMinimumCapacity(rhs.size)];
 					for (c_ptr = (l_ptr = _valPtr) + size; l_ptr < c_ptr; ++newptr, ++l_ptr)
 						 *newptr = *l_ptr;
 					delete[] _valPtr;
@@ -241,7 +228,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		{
 			BigInteger absGreaterOne(rhs);
 			absGreaterOne._absSubtract(*this);
-			this->~BigInteger();
+			this->clearToZero();
 			*this = std::move(absGreaterOne);
 		}
 		return *this;
@@ -249,26 +236,25 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 
 	const BigInteger& BigInteger::operator-=(const BigInteger& rhs)
 	{
-		if (this == &rhs) return this->clearToZero();
+		if (this == &rhs) { clearToZero(); return *this; }
 		BigInteger signModified_rhs(rhs.size, rhs._valPtr);
 		signModified_rhs.negativity = !rhs.negativity;
 		*this += signModified_rhs;
 		return *this;
 	}
 
-	const BigInteger& BigInteger::clearToZero()
+	void BigInteger::clearToZero()
 	{
+		if (_exclusivelyMemoryAllocated) delete[] _valPtr;
 		negativity = false;
 		size = capacity = 0;
-		if (_exclusivelyMemoryAllocated) delete[] _valPtr;
 		_valPtr = nullptr;
-		return *this;
 	}
 
 	const BigInteger& BigInteger::operator>>=(const uint32 shift)
 	{
 		uint32 a = shift >> 5;
-		if (a >= size) return this->clearToZero();
+		if (a >= size) { clearToZero(); return *this; }
 		else if (a) {
 			uint32 i = 0;
 			size -= a;
@@ -300,9 +286,8 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 				uint32 *souptr, *tarptr, *comptr;
 				if (capacity < (size += a)) {
 					newMemAlloced = true;
-					capacity = _calcMinimumCapacity(size);
-					if (nullptr == (tarptr = new uint32[capacity]))
-						throw std::bad_alloc();
+					capacity = _getMinimumCapacity(size);
+					tarptr = new uint32[capacity];
 					comptr = tarptr + size;
 					tarptr += capacity;
 					while (tarptr > comptr) *(--tarptr) = 0;
@@ -323,7 +308,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	}
 
 
-	BigInteger operator*(const BigInteger& lhs, const BigInteger& rhs)
+	const BigInteger operator*(const BigInteger& lhs, const BigInteger& rhs)
 	{//multipication
 		BigInteger capacityModified_lhs(lhs.size, lhs._valPtr);
 		BigInteger capacityModified_rhs(rhs.size, rhs._valPtr);
@@ -332,10 +317,19 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		return ret;
 	}
 
-	//编译器优化后相当于 _absMultiply(BigInteger& out_result, const BigInteger& lhs, const BigInteger& rhs)
+	//(有区别?t = func(t,t))编译器优化后相当于 _absMultiply(BigInteger& out_result, const BigInteger& lhs, const BigInteger& rhs)
 	BigInteger BigInteger::_absMultiply(const BigInteger& lhs, const BigInteger& rhs)
 	{
 		if ((!lhs.size) | (!rhs.size)) return BigInteger();
+#ifdef FFT_MULTIPLICATION
+		uint32 sizeSum = lhs.size + rhs.size;
+		if (sizeSum == 2) return BigInteger((unsigned long long)*lhs._valPtr * *rhs._valPtr);
+		if (sizeSum <= FFT_MAX_N / (BITS_OF_DWORD / FFT_WORD_BITLEN)) {
+			BigInteger ret;
+			_FFTMultiply(ret, lhs, rhs);
+			return ret;
+		}
+#endif
 		if (lhs.capacity != rhs.capacity)
 		{
 			const BigInteger& longer = (lhs.capacity >= rhs.capacity) ? lhs : rhs;
@@ -367,7 +361,6 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		if (pDiff < 0) return BigInteger();
 		int pow = ((pDiff + 1) << 5);
 		bool* binaryList = new bool[pow];
-		if (nullptr == binaryList) throw std::bad_alloc();
 		BigInteger newrhs(rhs); newrhs <<= --pow;
 		int leftMostBit = -1;
 		do {
@@ -386,8 +379,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		}
 		BigInteger ret;
 		ret.size = 1 + (leftMostBit >> 5);
-		if (nullptr == (ret._valPtr = new uint32[ret.capacity = _calcMinimumCapacity(ret.size)]))
-			throw std::bad_alloc();
+		ret._valPtr = new uint32[ret.capacity = _getMinimumCapacity(ret.size)];
 		for (uint32 piece = 0; pow < leftMostBit; ++piece)
 		{
 			ret._valPtr[piece] = 0;
@@ -398,7 +390,7 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		return ret;
 	}
 
-	BigInteger operator/(const BigInteger& lhs, const BigInteger& rhs)
+	const BigInteger operator/(const BigInteger& lhs, const BigInteger& rhs)
 	{
 		BigInteger newlhs(lhs);
 		newlhs.negativity = false;
@@ -436,7 +428,6 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 		if (size == 0) return std::string("0");
 		uint32 t = (size * 10) + 2;
 		char* buffer = new char[t];
-		if (nullptr == buffer) throw std::bad_alloc();
 		char* c = buffer + t;
 		*(--c) = '\0';
 		const BigInteger ten(10);
@@ -455,9 +446,9 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 	}
 
 	char* BigInteger::toHexadecimalCharArray() const
-	{//this part will work correctly only if the sizeof(uint32) is 4
-		char* c_str = new char[(size << 3) + 2], *c;
-		if (nullptr == (c = c_str)) throw std::bad_alloc();
+	{
+		char* c_str = new char[(size << 3) + 2];
+		char* c = c_str;
 		if (size)
 		{
 			if (negativity) *(c++) = '-';
@@ -482,29 +473,34 @@ static_assert(sizeof(long long) / sizeof(uint32) == 2, "Compile error in BigInte
 			*out_digitsSize = 0;
 			return nullptr;
 		}
-		size_t digitsSize = this->size * (size_t)32;
-		bool* ret = new bool[digitsSize];
-		if (nullptr == ret) throw std::bad_alloc();
-		for (uint32 i = 0, pieceIndex = 0; pieceIndex < this->size; ++pieceIndex, i += BITS_OF_DWORD)
-		{
-static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
-			uint32 piece = this->_valPtr[pieceIndex];
-			ret[i + 0] = (piece & (1 << 0)) != 0; ret[i + 1] = (piece & (1 << 1)) != 0;	ret[i + 2] = (piece & (1 << 2)) != 0; ret[i + 3] = (piece & (1 << 3)) != 0;
-			ret[i + 4] = (piece & (1 << 4)) != 0; ret[i + 5] = (piece & (1 << 5)) != 0;	ret[i + 6] = (piece & (1 << 6)) != 0; ret[i + 7] = (piece & (1 << 7)) != 0;
-			ret[i + 8] = (piece & (1 << 8)) != 0; ret[i + 9] = (piece & (1 << 9)) != 0; ret[i + 10] = (piece & (1 << 10)) != 0; ret[i + 11] = (piece & (1 << 11)) != 0;
-			ret[i + 12] = (piece & (1 << 12)) != 0;	ret[i + 13] = (piece & (1 << 13)) != 0;	ret[i + 14] = (piece & (1 << 14)) != 0;	ret[i + 15] = (piece & (1 << 15)) != 0;
-			ret[i + 16] = (piece & (1 << 16)) != 0;	ret[i + 17] = (piece & (1 << 17)) != 0;	ret[i + 18] = (piece & (1 << 18)) != 0;	ret[i + 19] = (piece & (1 << 19)) != 0;
-			ret[i + 20] = (piece & (1 << 20)) != 0;	ret[i + 21] = (piece & (1 << 21)) != 0;	ret[i + 22] = (piece & (1 << 22)) != 0;	ret[i + 23] = (piece & (1 << 23)) != 0;
-			ret[i + 24] = (piece & (1 << 24)) != 0;	ret[i + 25] = (piece & (1 << 25)) != 0;	ret[i + 26] = (piece & (1 << 26)) != 0;	ret[i + 27] = (piece & (1 << 27)) != 0;
-			ret[i + 28] = (piece & (1 << 28)) != 0;	ret[i + 29] = (piece & (1 << 29)) != 0;	ret[i + 30] = (piece & (1 << 30)) != 0;	ret[i + 31] = (piece & (1 << 31)) != 0;
-		}
-		do { --digitsSize; } while (!ret[digitsSize]) ;
-		*out_digitsSize = ++digitsSize;
-		return ret;
+		bool* ret = new bool[*out_digitsSize = this->size * BITS_OF_DWORD];
+		return convertAbsToBinaryArray(ret, out_digitsSize);
 	}
 
+	bool* BigInteger::convertAbsToBinaryArray(bool* dst, size_t* out_digitsSize) const
+	{
+		for (uint32 i = 0, pieceIndex = 0; pieceIndex < this->size; ++pieceIndex, i += BITS_OF_DWORD)
+		{
+			static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
+			uint32 piece = this->_valPtr[pieceIndex];
+			dst[i + 0] = (piece & (1 << 0)) != 0; dst[i + 1] = (piece & (1 << 1)) != 0;	dst[i + 2] = (piece & (1 << 2)) != 0; dst[i + 3] = (piece & (1 << 3)) != 0;
+			dst[i + 4] = (piece & (1 << 4)) != 0; dst[i + 5] = (piece & (1 << 5)) != 0;	dst[i + 6] = (piece & (1 << 6)) != 0; dst[i + 7] = (piece & (1 << 7)) != 0;
+			dst[i + 8] = (piece & (1 << 8)) != 0; dst[i + 9] = (piece & (1 << 9)) != 0; dst[i + 10] = (piece & (1 << 10)) != 0; dst[i + 11] = (piece & (1 << 11)) != 0;
+			dst[i + 12] = (piece & (1 << 12)) != 0;	dst[i + 13] = (piece & (1 << 13)) != 0;	dst[i + 14] = (piece & (1 << 14)) != 0;	dst[i + 15] = (piece & (1 << 15)) != 0;
+			dst[i + 16] = (piece & (1 << 16)) != 0;	dst[i + 17] = (piece & (1 << 17)) != 0;	dst[i + 18] = (piece & (1 << 18)) != 0;	dst[i + 19] = (piece & (1 << 19)) != 0;
+			dst[i + 20] = (piece & (1 << 20)) != 0;	dst[i + 21] = (piece & (1 << 21)) != 0;	dst[i + 22] = (piece & (1 << 22)) != 0;	dst[i + 23] = (piece & (1 << 23)) != 0;
+			dst[i + 24] = (piece & (1 << 24)) != 0;	dst[i + 25] = (piece & (1 << 25)) != 0;	dst[i + 26] = (piece & (1 << 26)) != 0;	dst[i + 27] = (piece & (1 << 27)) != 0;
+			dst[i + 28] = (piece & (1 << 28)) != 0;	dst[i + 29] = (piece & (1 << 29)) != 0;	dst[i + 30] = (piece & (1 << 30)) != 0;	dst[i + 31] = (piece & (1 << 31)) != 0;
+		}
+		if (out_digitsSize) {
+			size_t digitsSize = *out_digitsSize;
+			do { --digitsSize; } while (!dst[digitsSize]);
+			*out_digitsSize = ++digitsSize;
+		}
+		return dst;
+	}
 
-	BigInteger BigInteger::pow(uint32 positive_exponent) const
+	const BigInteger BigInteger::pow(uint32 positive_exponent) const
 	{
 		if (0 == positive_exponent) return BigInteger(1);
 		BigInteger t = this->pow(positive_exponent >> 1);
@@ -517,7 +513,7 @@ static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 		return tSquared;
 	}
 
-	BigInteger BigInteger::modPow(const BigInteger& exponent, const BigInteger& m) const
+	const BigInteger BigInteger::modPow(const BigInteger& exponent, const BigInteger& m) const
 	{
 		if (0 == exponent.size) return BigInteger(1);
 		if ((0 == m.size) | m.negativity) throw std::logic_error("modular for `modPow` function must be positive.");
@@ -528,16 +524,28 @@ static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 			base.absDivideAndSetThisToRemainder(m);
 			base += m;
 		}
-		BigInteger result = base._fastModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
+		BigInteger result = base._trivialModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
 		delete[] binaryArrayOfExponent;
 		return result;
 	}
 
-	BigInteger BigInteger::_fastModPow(bool* binaryArrayOfExponent, size_t digitsSizeOfExponent, const BigInteger& m) const
+	//`m` must be a odd number and larger than both BigInteger(2) and BigInteger(*this) to apply montgomeryModPow method
+	//`exponent` must be positive
+	const BigInteger BigInteger::fastModPow(const BigInteger& exponent, const BigInteger& m) const
+	{
+		if (0 == exponent.size) return BigInteger(1);
+		size_t digitsSizeOfExponent;
+		bool* binaryArrayOfExponent = exponent.convertAbsToBinaryArray(&digitsSizeOfExponent);
+		BigInteger result = this->_montgomeryModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
+		delete[] binaryArrayOfExponent;
+		return result;
+	}
+
+	BigInteger BigInteger::_trivialModPow(bool* binaryArrayOfExponent, size_t bitsOfExponent, const BigInteger& m) const
 	{
 		BigInteger result(1), newResult;
 		BigInteger tSquared(*this), thisPow_i;
-		for (size_t i = 0; i < digitsSizeOfExponent; ++i) {
+		for (size_t i = 0; i < bitsOfExponent; ++i) {
 			thisPow_i = std::move(tSquared);
 			if (binaryArrayOfExponent[i]) {
 				newResult = _absMultiply(result, thisPow_i);
@@ -552,22 +560,50 @@ static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 		return result;
 	}
 
-	/*BigInteger BigInteger::_fastModPow(bool* binaryArrayOfExponent, size_t digitsSizeOfExponent, const BigInteger& m) const
+	//http://www.hackersdelight.org/MontgomeryMultiplication.pdf
+	BigInteger BigInteger::_montgomeryModPow(bool* binaryArrayOfExponent, size_t bitsOfExponent, const BigInteger& m) const
 	{
-		if (digitsSizeOfExponent == 1) return binaryArrayOfExponent[0] ? BigInteger(*this) : BigInteger(1);
-		BigInteger t = this->_fastModPow(binaryArrayOfExponent + 1, digitsSizeOfExponent - 1, m);
-		BigInteger tSquared = _absMultiply(t, t);
-		tSquared.absDivideAndSetThisToRemainder(m);
-		if (binaryArrayOfExponent[0]) {
-			BigInteger ret = _absMultiply(*this, tSquared);
-			ret.absDivideAndSetThisToRemainder(m);
-			return ret;
+		BigInteger r(1);
+		r <<= m.size * BITS_OF_DWORD;
+		BigInteger r_(r), m_(m);
+		_EEAstruct eeaStruct = _extendedEuclid(&r_, &m_);
+		BigInteger r_slash = std::move(*eeaStruct.x);
+		BigInteger m_slash = std::move(*eeaStruct.y); m_slash.negativity = !m_slash.negativity;
+		delete eeaStruct.d; delete eeaStruct.x; delete eeaStruct.y;
+
+		BigInteger result_mf(r), newResult;
+		BigInteger thisPow_2i(*this * r), thisPow_i;
+		result_mf.absDivideAndSetThisToRemainder(m);
+		thisPow_2i.absDivideAndSetThisToRemainder(m);
+		for (size_t i = 0; i < bitsOfExponent; ++i) {
+			thisPow_i = std::move(thisPow_2i);
+			if (binaryArrayOfExponent[i]) {
+				newResult = result_mf * thisPow_i;//t = a_ * b_
+				BigInteger tm_slash = newResult * m_slash;//tm'
+				if (tm_slash.size > m.size) tm_slash.size = m.size;//tm' mod r
+				newResult += tm_slash * m;// (t + (tm' mod r)m) 
+				newResult >>= BITS_OF_DWORD * m.size;//u = (t + (tm' mod r)m) / r
+				if (newResult.compareAbsoluteValueTo(m) >= 0) newResult._absSubtract(m);//if (u >= m) return u - m;
+				result_mf.clearToZero();
+				result_mf = std::move(newResult);
+			}
+			thisPow_2i = thisPow_i * thisPow_i;
+			BigInteger tm_slash = thisPow_2i * m_slash;
+			if (tm_slash.size > m.size) tm_slash.size = m.size;
+			thisPow_2i += tm_slash * m;
+			thisPow_2i >>= BITS_OF_DWORD * m.size;
+			if (thisPow_2i.compareAbsoluteValueTo(m) >= 0) thisPow_2i._absSubtract(m);
+			thisPow_i.clearToZero();
 		}
-		return tSquared;
-	}*/
+
+		BigInteger result = result_mf * r.modInverse(m);
+		result.absDivideAndSetThisToRemainder(m);
+		if (result < 0) result += m;
+		return result;
+	}
 
 	//return BigInteger(0) when the inverse doesnot exist
-	BigInteger BigInteger::modInverse(const BigInteger& m) const
+	const BigInteger BigInteger::modInverse(const BigInteger& m) const
 	{
 		if ((0 == m.size) | m.negativity) throw std::logic_error("modular for `modInverse` function must be positive.");
 		if (gcd(*this, m) != BigInteger(1)) return BigInteger(0);
@@ -591,7 +627,7 @@ static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 		return BigInteger::_EEAstruct{ ts.d, ts.y, ts.x };
 	}
 
-	BigInteger BigInteger::gcd(const BigInteger& a, const BigInteger& b)
+	const BigInteger BigInteger::gcd(const BigInteger& a, const BigInteger& b)
 	{
 		BigInteger a_(a), b_(b);
 		BigInteger* result = _euclidGcd(&a_, &b_);
@@ -614,7 +650,7 @@ static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 	bool BigInteger::isPrime(int confidenceFactor) const
 	{
 		if (0 == size || negativity) return false;
-		if (_valPtr[0] <= 3) return (_valPtr[0] > 1);
+		if (1 == size && _valPtr[0] <= 3) return (_valPtr[0] > 1);
 		if ((_valPtr[0] & 1) == 0) return false;
 		BigInteger thisMinus1(*this); thisMinus1 += BigInteger(-1);
 		BigInteger a(1);
@@ -656,12 +692,12 @@ drmpt:		uint32 base = 2;
 	bool BigInteger::_isStrongProbablePrime(const BigInteger& a, const BigInteger& thisMinus1) const
 	{
 		const BigInteger bigInteger_1(1);
-		if (a.modPow(thisMinus1, *this) != bigInteger_1) return false;
+		if (a.fastModPow(thisMinus1, *this) != bigInteger_1) return false;
 		BigInteger u(thisMinus1);
 		do { u >>= 1; } while ((u._valPtr[0] & 1) == 0);
-		BigInteger x = a.modPow(u, *this);
+		BigInteger x = a.fastModPow(u, *this);
 		do {
-			BigInteger y = x.modPow(x, *this);
+			BigInteger y = x.fastModPow(x, *this);
 			if (y == bigInteger_1 && x != bigInteger_1 && x != thisMinus1) return false;
 			x.clearToZero();//不加这一句就内存泄漏！调用移动构造函数之前要怎么析构原对象呢？
 			x = std::move(y);
@@ -675,8 +711,7 @@ drmpt:		uint32 base = 2;
 	BigInteger::BigInteger(const void* dataPtr, size_t dataSize)
 	{
 		size = (dataSize + sizeof(uint32) - 1) / sizeof(uint32);
-		if (nullptr == (_valPtr = new uint32[capacity = _calcMinimumCapacity(size)]))
-			throw std::bad_alloc();
+		_valPtr = new uint32[capacity = _getMinimumCapacity(size)];
 		memcpy(_valPtr, dataPtr, dataSize);
 		memset(reinterpret_cast<char*>(_valPtr) + dataSize, 0, capacity * sizeof(uint32) - dataSize);
 		_setSize(size);
@@ -698,8 +733,7 @@ drmpt:		uint32 base = 2;
 		if (bitLength > capacity * BITS_OF_DWORD)
 		{
 			size = (bitLength + BITS_OF_DWORD - 1) / BITS_OF_DWORD;
-			if (nullptr == (_valPtr = new uint32[capacity = _calcMinimumCapacity(size)]))
-				throw std::bad_alloc();
+			_valPtr = new uint32[capacity = _getMinimumCapacity(size)];
 			memset(_valPtr + size - 1, 0, (capacity - size + 1) * sizeof(uint32));
 		}
 		uint32 i = 0;
