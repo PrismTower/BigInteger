@@ -1,5 +1,4 @@
 //Open source under MIT license. https://github.com/PrismTower/BigInteger
-//This is negative demostration of bad coding style which contains plenty of bugs difficult to find.
 
 #include "BigInteger.h"
 
@@ -66,48 +65,44 @@ namespace UPmath
 		size = source.size;
 		capacity = _getMinimumCapacity(size);
 		_valPtr = new uint32[capacity];
-		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
-		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
-			*_temptr = *_souptr;
-		_comptr = _valPtr + capacity;
-		while (_temptr < _comptr) *(_temptr++) = 0;
+		uint32 *_temptr = _valPtr, *_srcptr = source._valPtr;
+		for (uint32* _comptr = _temptr + size; _temptr < _comptr; ++_temptr, ++_srcptr)	*_temptr = *_srcptr;
 	}
 
 	const BigInteger& BigInteger::operator=(const BigInteger& source)
 	{
 		if (this == &source) return *this;
-		this->clearToZero();
+		if (source.size > this->capacity) {
+			delete[] this->_valPtr;
+			this->_valPtr = new uint32[this->capacity = _getMinimumCapacity(source.size)];
+		}
 		negativity = source.negativity;
 		size = source.size;
-		capacity = _getMinimumCapacity(size);
-		_valPtr = new uint32[capacity];
-		uint32 *_temptr, *_comptr, *_souptr = source._valPtr;
-		for (_comptr = (_temptr = _valPtr) + size; _temptr < _comptr; ++_temptr, ++_souptr)
-			*_temptr = *_souptr;
-		_comptr = _valPtr + capacity;
-		while (_temptr < _comptr) *(_temptr++) = 0;
+		uint32 *_temptr = _valPtr, *_srcptr = source._valPtr;
+		for (uint32* _comptr = _temptr + size; _temptr < _comptr; ++_temptr, ++_srcptr)	*_temptr = *_srcptr;
 		return *this;
 	}
 
 	const BigInteger& BigInteger::operator=(BigInteger&& source)
 	{
+		delete[] _valPtr;
 		_valPtr = source._valPtr;
-		_exclusivelyMemoryAllocated = source._exclusivelyMemoryAllocated;
 		negativity = source.negativity;
 		capacity = source.capacity;
 		size = source.size;
 		source._valPtr = nullptr;
+		source.capacity = source.size = 0;
 		return *this;
 	}
 
 	BigInteger::BigInteger(BigInteger&& source)
 	{
 		_valPtr = source._valPtr;
-		_exclusivelyMemoryAllocated = source._exclusivelyMemoryAllocated;
 		negativity = source.negativity;
 		capacity = source.capacity;
 		size = source.size;
 		source._valPtr = nullptr;
+		source.capacity = source.size = 0;
 	}
 
 	BigInteger::BigInteger(const std::string& str) :
@@ -124,8 +119,7 @@ namespace UPmath
 			while (newptr < temptr)	*(newptr++) = *(_valPtr++);
 			*newptr = value;
 			delete[] (_valPtr -= size);
-			temptr = (_valPtr = newptr - size++) + capacity;
-			while (++newptr < temptr) *newptr = 0;
+			_valPtr = newptr - size++;
 		}
 	}
 
@@ -190,17 +184,14 @@ namespace UPmath
 		else if (negativity == rhs.negativity)
 		{
 			uint32 commonPiecesCount = (size > rhs.size) ? rhs.size : size;
-			uint32 *l_ptr, *r_ptr, *c_ptr;//lhs的数组指针，rhs的数组指针，用于比较地址的指针
+			uint32 *l_ptr, *r_ptr, *c_ptr;
 			if (commonPiecesCount != rhs.size)
 			{//rhs is longer
 				if (capacity < rhs.size) {
 					uint32* newptr = new uint32[capacity = _getMinimumCapacity(rhs.size)];
-					for (c_ptr = (l_ptr = _valPtr) + size; l_ptr < c_ptr; ++newptr, ++l_ptr)
-						 *newptr = *l_ptr;
+					for (c_ptr = (l_ptr = _valPtr) + size; l_ptr < c_ptr; ++newptr, ++l_ptr) *newptr = *l_ptr;
 					delete[] _valPtr;
-					_valPtr = (l_ptr = newptr) - size;
-					newptr = _valPtr + rhs.size; 
-					for (c_ptr = _valPtr + capacity; newptr < c_ptr; ++newptr) *newptr = 0;
+					_valPtr = newptr - size;
 				}
 				l_ptr = _valPtr + size;
 				r_ptr = rhs._valPtr + size;
@@ -228,7 +219,6 @@ namespace UPmath
 		{
 			BigInteger absGreaterOne(rhs);
 			absGreaterOne._absSubtract(*this);
-			this->clearToZero();
 			*this = std::move(absGreaterOne);
 		}
 		return *this;
@@ -237,7 +227,7 @@ namespace UPmath
 	const BigInteger& BigInteger::operator-=(const BigInteger& rhs)
 	{
 		if (this == &rhs) { clearToZero(); return *this; }
-		BigInteger signModified_rhs(rhs.size, rhs._valPtr);
+		_SharedMemBigInteger signModified_rhs(rhs);
 		signModified_rhs.negativity = !rhs.negativity;
 		*this += signModified_rhs;
 		return *this;
@@ -245,7 +235,7 @@ namespace UPmath
 
 	void BigInteger::clearToZero()
 	{
-		if (_exclusivelyMemoryAllocated) delete[] _valPtr;
+		delete[] _valPtr;
 		negativity = false;
 		size = capacity = 0;
 		_valPtr = nullptr;
@@ -307,17 +297,24 @@ namespace UPmath
 		return *this;
 	}
 
-
-	const BigInteger operator*(const BigInteger& lhs, const BigInteger& rhs)
+	BigInteger operator*(const BigInteger& lhs, const BigInteger& rhs)
 	{//multipication
-		BigInteger capacityModified_lhs(lhs.size, lhs._valPtr);
-		BigInteger capacityModified_rhs(rhs.size, rhs._valPtr);
-		BigInteger ret = BigInteger::_absMultiply(capacityModified_lhs, capacityModified_rhs);
+		BigInteger ret = BigInteger::_absMultiply(lhs, rhs);
 		ret.negativity = (lhs.negativity != rhs.negativity);
 		return ret;
 	}
 
-	//(有区别?t = func(t,t))编译器优化后相当于 _absMultiply(BigInteger& out_result, const BigInteger& lhs, const BigInteger& rhs)
+	void BigInteger::_seperateToHigherAndLowerHalfs(BigInteger* dst) const
+	{
+		uint32 halfCapacity = capacity >> 1;
+		dst[0]._valPtr = _valPtr + halfCapacity;
+		dst[0].size = (size < halfCapacity) ? 0 : size - halfCapacity;
+		dst[0].capacity = _getMinimumCapacity(dst[0].size);
+		dst[1]._valPtr = _valPtr;
+		dst[1]._setSize((size < halfCapacity) ? size : halfCapacity);
+		dst[1].capacity = _getMinimumCapacity(dst[1].size);
+	}
+
 	BigInteger BigInteger::_absMultiply(const BigInteger& lhs, const BigInteger& rhs)
 	{
 		if ((!lhs.size) | (!rhs.size)) return BigInteger();
@@ -334,17 +331,24 @@ namespace UPmath
 		{
 			const BigInteger& longer = (lhs.capacity >= rhs.capacity) ? lhs : rhs;
 			const BigInteger& shorter = (lhs.capacity >= rhs.capacity) ? rhs : lhs;
-			BigInteger ret = _absMultiply(longer._higherHalfBits(), shorter);
+			unsigned char _sharedMemBigIntegers[2 * sizeof(BigInteger)];
+			BigInteger* sharedMemeoryBigIntegers = reinterpret_cast<BigInteger*>(_sharedMemBigIntegers);//read only
+			longer._seperateToHigherAndLowerHalfs(sharedMemeoryBigIntegers);
+			BigInteger ret = _absMultiply(sharedMemeoryBigIntegers[0], shorter);
 			ret <<= (longer.capacity << 4);
-			ret += _absMultiply(longer._lowerHalfBits(), shorter);
+			ret += _absMultiply(sharedMemeoryBigIntegers[1], shorter);
 			return ret;
 		}
 		if (lhs.capacity > 1)
 		{
-			BigInteger higher_part = _absMultiply(lhs._higherHalfBits(), rhs._higherHalfBits());
-			BigInteger lower_part = _absMultiply(lhs._lowerHalfBits(), rhs._lowerHalfBits());
+			unsigned char _sharedMemBigIntegers[4 * sizeof(BigInteger)];
+			BigInteger *lhsParts = reinterpret_cast<BigInteger*>(_sharedMemBigIntegers), *rhsParts = 2 + lhsParts;//read only
+			lhs._seperateToHigherAndLowerHalfs(lhsParts);
+			rhs._seperateToHigherAndLowerHalfs(rhsParts);
+			BigInteger higher_part = _absMultiply(lhsParts[0], rhsParts[0]);
+			BigInteger lower_part = _absMultiply(lhsParts[1], rhsParts[1]);
 			BigInteger mid_part = higher_part + lower_part;
-			mid_part += ((lhs._lowerHalfBits() - lhs._higherHalfBits()) * (rhs._higherHalfBits() - rhs._lowerHalfBits()));
+			mid_part += ((lhsParts[1] - lhsParts[0]) * (rhsParts[0] - rhsParts[1]));
 			higher_part <<= (lhs.capacity << 5);
 			mid_part <<= (lhs.capacity << 4);
 			higher_part += (mid_part += lower_part);
@@ -353,7 +357,7 @@ namespace UPmath
 		return BigInteger((unsigned long long)*lhs._valPtr * *rhs._valPtr);
 	}
 	
-	const BigInteger BigInteger::absDivideAndSetThisToRemainder(const BigInteger& rhs)
+	BigInteger BigInteger::absDivideAndSetThisToRemainder(const BigInteger& rhs)
 	{//set *this to remainder and return the quotient
 		if (this == &rhs) {	this->clearToZero(); return BigInteger(1); }
 		int pDiff = this->size - rhs.size;
@@ -390,7 +394,7 @@ namespace UPmath
 		return ret;
 	}
 
-	const BigInteger operator/(const BigInteger& lhs, const BigInteger& rhs)
+	BigInteger operator/(const BigInteger& lhs, const BigInteger& rhs)
 	{
 		BigInteger newlhs(lhs);
 		newlhs.negativity = false;
@@ -500,11 +504,11 @@ namespace UPmath
 		return dst;
 	}
 
-	const BigInteger BigInteger::pow(uint32 positive_exponent) const
+	BigInteger BigInteger::pow(uint32 positive_exponent) const
 	{
 		if (0 == positive_exponent) return BigInteger(1);
 		BigInteger t = this->pow(positive_exponent >> 1);
-		BigInteger tSquared = _absMultiply(t, t);//如果这样写会内存泄漏 t = _absMultiply(t, t); 下面也有类似的问题
+		BigInteger tSquared = _absMultiply(t, t);
 		if (positive_exponent & 1) {
 			BigInteger ret = _absMultiply(*this, tSquared);
 			ret.negativity = this->negativity;
@@ -513,7 +517,7 @@ namespace UPmath
 		return tSquared;
 	}
 
-	const BigInteger BigInteger::modPow(const BigInteger& exponent, const BigInteger& m) const
+	BigInteger BigInteger::modPow(const BigInteger& exponent, const BigInteger& m) const
 	{
 		if (0 == exponent.size) return BigInteger(1);
 		if ((0 == m.size) | m.negativity) throw std::logic_error("modular for `modPow` function must be positive.");
@@ -529,18 +533,6 @@ namespace UPmath
 		return result;
 	}
 
-	//`m` must be a odd number and larger than both BigInteger(2) and BigInteger(*this) to apply montgomeryModPow method
-	//`exponent` must be positive
-	const BigInteger BigInteger::fastModPow(const BigInteger& exponent, const BigInteger& m) const
-	{
-		if (0 == exponent.size) return BigInteger(1);
-		size_t digitsSizeOfExponent;
-		bool* binaryArrayOfExponent = exponent.convertAbsToBinaryArray(&digitsSizeOfExponent);
-		BigInteger result = this->_montgomeryModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
-		delete[] binaryArrayOfExponent;
-		return result;
-	}
-
 	BigInteger BigInteger::_trivialModPow(bool* binaryArrayOfExponent, size_t bitsOfExponent, const BigInteger& m) const
 	{
 		BigInteger result(1), newResult;
@@ -550,13 +542,23 @@ namespace UPmath
 			if (binaryArrayOfExponent[i]) {
 				newResult = _absMultiply(result, thisPow_i);
 				newResult.absDivideAndSetThisToRemainder(m);
-				result.clearToZero();
 				result = std::move(newResult);
 			}
 			tSquared = _absMultiply(thisPow_i, thisPow_i);
 			tSquared.absDivideAndSetThisToRemainder(m);
-			thisPow_i.clearToZero();
 		}
+		return result;
+	}
+
+	//`m` must be a odd number and larger than both BigInteger(2) and BigInteger(*this) to apply montgomeryModPow method
+	//`exponent` must be positive
+	BigInteger BigInteger::fastModPow(const BigInteger& exponent, const BigInteger& m) const
+	{
+		if (0 == exponent.size) return BigInteger(1);
+		size_t digitsSizeOfExponent;
+		bool* binaryArrayOfExponent = exponent.convertAbsToBinaryArray(&digitsSizeOfExponent);
+		BigInteger result = this->_montgomeryModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
+		delete[] binaryArrayOfExponent;
 		return result;
 	}
 
@@ -584,7 +586,6 @@ namespace UPmath
 				newResult += tm_slash * m;// (t + (tm' mod r)m) 
 				newResult >>= BITS_OF_DWORD * m.size;//u = (t + (tm' mod r)m) / r
 				if (newResult.compareAbsoluteValueTo(m) >= 0) newResult._absSubtract(m);//if (u >= m) return u - m;
-				result_mf.clearToZero();
 				result_mf = std::move(newResult);
 			}
 			thisPow_2i = thisPow_i * thisPow_i;
@@ -593,7 +594,6 @@ namespace UPmath
 			thisPow_2i += tm_slash * m;
 			thisPow_2i >>= BITS_OF_DWORD * m.size;
 			if (thisPow_2i.compareAbsoluteValueTo(m) >= 0) thisPow_2i._absSubtract(m);
-			thisPow_i.clearToZero();
 		}
 
 		BigInteger result = result_mf * r.modInverse(m);
@@ -603,7 +603,7 @@ namespace UPmath
 	}
 
 	//return BigInteger(0) when the inverse doesnot exist
-	const BigInteger BigInteger::modInverse(const BigInteger& m) const
+	BigInteger BigInteger::modInverse(const BigInteger& m) const
 	{
 		if ((0 == m.size) | m.negativity) throw std::logic_error("modular for `modInverse` function must be positive.");
 		if (gcd(*this, m) != BigInteger(1)) return BigInteger(0);
@@ -627,7 +627,7 @@ namespace UPmath
 		return BigInteger::_EEAstruct{ ts.d, ts.y, ts.x };
 	}
 
-	const BigInteger BigInteger::gcd(const BigInteger& a, const BigInteger& b)
+	BigInteger BigInteger::gcd(const BigInteger& a, const BigInteger& b)
 	{
 		BigInteger a_(a), b_(b);
 		BigInteger* result = _euclidGcd(&a_, &b_);
@@ -699,7 +699,6 @@ drmpt:		uint32 base = 2;
 		do {
 			BigInteger y = x.fastModPow(x, *this);
 			if (y == bigInteger_1 && x != bigInteger_1 && x != thisMinus1) return false;
-			x.clearToZero();//不加这一句就内存泄漏！调用移动构造函数之前要怎么析构原对象呢？
 			x = std::move(y);
 			u <<= 1;
 		} while (u < *this);
@@ -752,6 +751,13 @@ drmpt:		uint32 base = 2;
 		if (dwordIndex >= size) return false;
 		dwordIndex %= bitsOfDWORD;
 		return 0 != (_valPtr[dwordIndex] & (1 << dwordIndex));
+	}
+
+	BigInteger::_SharedMemBigInteger::_SharedMemBigInteger(uint32 size_, uint32* val)
+	{
+		_valPtr = val;
+		_setSize(size_);
+		capacity = _getMinimumCapacity(size);
 	}
 
 }//namespace UPMath

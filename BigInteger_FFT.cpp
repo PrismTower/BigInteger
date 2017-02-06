@@ -5,7 +5,7 @@
 #ifdef FFT_MULTIPLICATION
 namespace UPmath
 {
-	bool BigInteger::_isRootsOfUnitySet = false;
+	bool BigInteger::_isRootsOfUnityInitialized = false;
 
 	namespace BigInteger_FFT_Precedures
 	{
@@ -30,7 +30,7 @@ namespace UPmath
 			static_assert(sizeof(unsigned short) == FFT_WORD_SIZE, "Length of FFT_WORD is 16bits, which differs from sizeof(unsigned short).");
 			uint32 interval;
 			uint32 n;
-			Coefficients(const BigInteger& src, uint32 n) : interval(1), n(n) { src._getBeginAndEndOfData(begin, end); }
+			Coefficients(const BigInteger& src, uint32 n) : interval(1), n(n) { src._FFTgetBeginAndEndOfVal(begin, end); }
 			inline const Complex getComplexNumber() const
 			{
 				if (_IS_LITTLE_ENDIAN())
@@ -90,41 +90,40 @@ namespace UPmath
 		const uint32 n = _getMinimumCapacity(lhs.size + rhs.size) * BITS_OF_DWORD / FFT_WORD_BITLEN;
 		const uint32 omegaIndex = FFT_MAX_N / n;
 		if (0 == n) { dst = lhs * rhs; return; }
-		if (!_isRootsOfUnitySet) {//initialize  (1 + 0i) ^ (1/n)
+		if (!_isRootsOfUnityInitialized) {//initialize  (1 + 0i) ^ (1/n)
 			BigInteger_FFT_Precedures::initRootsOfUnity();
-			_isRootsOfUnitySet = true;
+			_isRootsOfUnityInitialized = true;
 		}
 		bool newMemAlloced = (nullptr == buffer);
-		if (newMemAlloced) buffer = operator new(n * 4 * sizeof(BigInteger_FFT_Precedures::Complex));
-		BigInteger_FFT_Precedures::Complex* cBuffer = reinterpret_cast<BigInteger_FFT_Precedures::Complex*>(buffer);
-		//multi-threading is beneficial here
+		if (newMemAlloced) buffer = operator new(n * 3 * sizeof(BigInteger_FFT_Precedures::Complex));
+		BigInteger_FFT_Precedures::Complex* _buffer = reinterpret_cast<BigInteger_FFT_Precedures::Complex*>(buffer);
+		//multi-threading is beneficial little here
 		BigInteger_FFT_Precedures::Coefficients A(lhs, n);
-		BigInteger_FFT_Precedures::Complex* lhsValues = cBuffer + n;
-		BigInteger_FFT_Precedures::FFT(lhsValues, lhsValues - n, A, omegaIndex);
+		BigInteger_FFT_Precedures::Complex* lhsValues = _buffer + n;
+		BigInteger_FFT_Precedures::FFT(lhsValues, _buffer, A, omegaIndex);
 		BigInteger_FFT_Precedures::Coefficients B(rhs, n);
-		BigInteger_FFT_Precedures::Complex* rhsValues = cBuffer + 2 * n;
-		BigInteger_FFT_Precedures::FFT(rhsValues, rhsValues + n, B, omegaIndex);
+		BigInteger_FFT_Precedures::Complex* rhsValues = lhsValues + n;
+		BigInteger_FFT_Precedures::FFT(rhsValues, _buffer, B, omegaIndex);
 		for (uint32 j = 0; j < n; ++j)
-			cBuffer[j] = BigInteger_FFT_Precedures::Complex::multiply(*lhsValues++, *rhsValues++);
-		BigInteger_FFT_Precedures::ValueRepresentation C(cBuffer, n);
-		BigInteger_FFT_Precedures::Complex* products = cBuffer + n;
+			_buffer[j] = BigInteger_FFT_Precedures::Complex::multiply(*lhsValues++, *rhsValues++);
+		BigInteger_FFT_Precedures::ValueRepresentation C(_buffer, n);
+		BigInteger_FFT_Precedures::Complex* products = _buffer + n;
 		BigInteger_FFT_Precedures::FFT(products, products + n, C, FFT_MAX_N - omegaIndex);
 
 		uint32 newCapa = n / (BITS_OF_DWORD / FFT_WORD_BITLEN);
-		if (newCapa > dst.capacity || !dst._exclusivelyMemoryAllocated) {
-			if (dst._exclusivelyMemoryAllocated) delete[] dst._valPtr;
+		if (newCapa > dst.capacity) {
+			delete[] dst._valPtr;
 			dst._valPtr = new uint32[dst.capacity = newCapa];
-			dst._exclusivelyMemoryAllocated = true;
 		}
 		unsigned long long t = 0;
 		static_assert(sizeof(unsigned long long) > sizeof(uint32), "");
 		for (uint32 pieceIndex = 0; pieceIndex < newCapa; ++pieceIndex)	{
-			//double er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgMiniError) __dbgMiniError = er;
-			t += (products++)->re / n + 0.5;
+			//double er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
+			t += unsigned long long((products++)->re / n + 0.5);
 			dst._valPtr[pieceIndex] = t & ((1 << FFT_WORD_BITLEN) - 1);
 			t >>= FFT_WORD_BITLEN;
-			//er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgMiniError) __dbgMiniError = er;
-			t += (products++)->re / n + 0.5;
+			//er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
+			t += unsigned long long((products++)->re / n + 0.5);
 			dst._valPtr[pieceIndex] |= uint32(t) << FFT_WORD_BITLEN;
 			t >>= FFT_WORD_BITLEN;
 		}
