@@ -37,8 +37,8 @@ namespace UPmath
 					return Complex(begin < end ? (double)*begin : 0.0);
 				else {//WARNING: no tests has been done for big endian machines.
 					if (begin >= end) return Complex();
-					if ((uint32)begin & FFT_WORD_SIZE) return *(begin - FFT_WORD_SIZE);
-					return *(begin + FFT_WORD_SIZE);
+					if ((size_t)begin & FFT_WORD_SIZE) return (double)*(begin - FFT_WORD_SIZE);
+					return (double)*(begin + FFT_WORD_SIZE);
 				}
 			}
 		};
@@ -86,10 +86,10 @@ namespace UPmath
 
 	void BigInteger::_FFTMultiply(BigInteger& dst, const BigInteger& lhs, const BigInteger& rhs, void* buffer)
 	{
-		if ((!lhs.size) | (!rhs.size)) { dst.clearToZero(); return; }
+		if ((!lhs.size) | (!rhs.size)) { dst.size = 0; return; }
 		const uint32 n = _getMinimumCapacity(lhs.size + rhs.size) * BITS_OF_DWORD / FFT_WORD_BITLEN;
-		const uint32 omegaIndex = FFT_MAX_N / n;
-		if (0 == n) { dst = lhs * rhs; return; }
+		const uint32 kOmegaIndex = FFT_MAX_N / n;
+		if (0 == kOmegaIndex) { dst = _absMultiply(lhs, rhs); return; }
 		if (!_isRootsOfUnityInitialized) {//initialize  (1 + 0i) ^ (1/n)
 			BigInteger_FFT_Precedures::initRootsOfUnity();
 			_isRootsOfUnityInitialized = true;
@@ -100,15 +100,15 @@ namespace UPmath
 		//multi-threading is beneficial little here
 		BigInteger_FFT_Precedures::Coefficients A(lhs, n);
 		BigInteger_FFT_Precedures::Complex* lhsValues = _buffer + n;
-		BigInteger_FFT_Precedures::FFT(lhsValues, _buffer, A, omegaIndex);
+		BigInteger_FFT_Precedures::FFT(lhsValues, _buffer, A, kOmegaIndex);
 		BigInteger_FFT_Precedures::Coefficients B(rhs, n);
 		BigInteger_FFT_Precedures::Complex* rhsValues = lhsValues + n;
-		BigInteger_FFT_Precedures::FFT(rhsValues, _buffer, B, omegaIndex);
+		BigInteger_FFT_Precedures::FFT(rhsValues, _buffer, B, kOmegaIndex);
 		for (uint32 j = 0; j < n; ++j)
 			_buffer[j] = BigInteger_FFT_Precedures::Complex::multiply(*lhsValues++, *rhsValues++);
 		BigInteger_FFT_Precedures::ValueRepresentation C(_buffer, n);
 		BigInteger_FFT_Precedures::Complex* products = _buffer + n;
-		BigInteger_FFT_Precedures::FFT(products, products + n, C, FFT_MAX_N - omegaIndex);
+		BigInteger_FFT_Precedures::FFT(products, products + n, C, FFT_MAX_N - kOmegaIndex);
 
 		uint32 newCapa = n / (BITS_OF_DWORD / FFT_WORD_BITLEN);
 		if (newCapa > dst.capacity) {

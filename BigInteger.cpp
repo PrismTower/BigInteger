@@ -226,25 +226,17 @@ namespace UPmath
 
 	const BigInteger& BigInteger::operator-=(const BigInteger& rhs)
 	{
-		if (this == &rhs) { clearToZero(); return *this; }
+		if (this == &rhs) { this->size = 0; return *this; }
 		_SharedMemBigInteger signModified_rhs(rhs);
 		signModified_rhs.negativity = !rhs.negativity;
 		*this += signModified_rhs;
 		return *this;
 	}
 
-	void BigInteger::clearToZero()
-	{
-		delete[] _valPtr;
-		negativity = false;
-		size = capacity = 0;
-		_valPtr = nullptr;
-	}
-
 	const BigInteger& BigInteger::operator>>=(const uint32 shift)
 	{
 		uint32 a = shift >> 5;
-		if (a >= size) { clearToZero(); return *this; }
+		if (a >= size) { this->size = 0; return *this; }
 		else if (a) {
 			uint32 i = 0;
 			size -= a;
@@ -332,8 +324,8 @@ namespace UPmath
 			const BigInteger& longer = (lhs.capacity >= rhs.capacity) ? lhs : rhs;
 			const BigInteger& shorter = (lhs.capacity >= rhs.capacity) ? rhs : lhs;
 			unsigned char _sharedMemBigIntegers[2 * sizeof(BigInteger)];
-			BigInteger* sharedMemeoryBigIntegers = reinterpret_cast<BigInteger*>(_sharedMemBigIntegers);//read only
-			longer._seperateToHigherAndLowerHalfs(sharedMemeoryBigIntegers);
+			BigInteger* sharedMemeoryBigIntegers = reinterpret_cast<BigInteger*>(_sharedMemBigIntegers);
+			longer._seperateToHigherAndLowerHalfs(sharedMemeoryBigIntegers);//initialize read only variables
 			BigInteger ret = _absMultiply(sharedMemeoryBigIntegers[0], shorter);
 			ret <<= (longer.capacity << 4);
 			ret += _absMultiply(sharedMemeoryBigIntegers[1], shorter);
@@ -342,9 +334,9 @@ namespace UPmath
 		if (lhs.capacity > 1)
 		{
 			unsigned char _sharedMemBigIntegers[4 * sizeof(BigInteger)];
-			BigInteger *lhsParts = reinterpret_cast<BigInteger*>(_sharedMemBigIntegers), *rhsParts = 2 + lhsParts;//read only
+			BigInteger *lhsParts = reinterpret_cast<BigInteger*>(_sharedMemBigIntegers), *rhsParts = 2 + lhsParts;//read only variables
 			lhs._seperateToHigherAndLowerHalfs(lhsParts);
-			rhs._seperateToHigherAndLowerHalfs(rhsParts);
+			rhs._seperateToHigherAndLowerHalfs(rhsParts);//initialize read only variables
 			BigInteger higher_part = _absMultiply(lhsParts[0], rhsParts[0]);
 			BigInteger lower_part = _absMultiply(lhsParts[1], rhsParts[1]);
 			BigInteger mid_part = higher_part + lower_part;
@@ -359,7 +351,7 @@ namespace UPmath
 	
 	BigInteger BigInteger::absDivideAndSetThisToRemainder(const BigInteger& rhs)
 	{//set *this to remainder and return the quotient
-		if (this == &rhs) {	this->clearToZero(); return BigInteger(1); }
+		if (this == &rhs) {	this->size = 0; return BigInteger(1); }
 		int pDiff = this->size - rhs.size;
 		if (0 == rhs.size) throw std::logic_error("Divide by zero");
 		if (pDiff < 0) return BigInteger();
@@ -382,7 +374,7 @@ namespace UPmath
 			return BigInteger(0);
 		}
 		BigInteger ret;
-		ret.size = 1 + (leftMostBit >> 5);
+		ret.size = 1 + ((uint32)leftMostBit / BITS_OF_DWORD);
 		ret._valPtr = new uint32[ret.capacity = _getMinimumCapacity(ret.size)];
 		for (uint32 piece = 0; pow < leftMostBit; ++piece)
 		{
@@ -477,31 +469,35 @@ namespace UPmath
 			*out_digitsSize = 0;
 			return nullptr;
 		}
-		bool* ret = new bool[*out_digitsSize = this->size * BITS_OF_DWORD];
-		return convertAbsToBinaryArray(ret, out_digitsSize);
-	}
-
-	bool* BigInteger::convertAbsToBinaryArray(bool* dst, size_t* out_digitsSize) const
-	{
+		size_t digitsSize = this->size * BITS_OF_DWORD;
+		bool* ret = new bool[digitsSize];
 		for (uint32 i = 0, pieceIndex = 0; pieceIndex < this->size; ++pieceIndex, i += BITS_OF_DWORD)
 		{
-			static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
 			uint32 piece = this->_valPtr[pieceIndex];
-			dst[i + 0] = (piece & (1 << 0)) != 0; dst[i + 1] = (piece & (1 << 1)) != 0;	dst[i + 2] = (piece & (1 << 2)) != 0; dst[i + 3] = (piece & (1 << 3)) != 0;
-			dst[i + 4] = (piece & (1 << 4)) != 0; dst[i + 5] = (piece & (1 << 5)) != 0;	dst[i + 6] = (piece & (1 << 6)) != 0; dst[i + 7] = (piece & (1 << 7)) != 0;
-			dst[i + 8] = (piece & (1 << 8)) != 0; dst[i + 9] = (piece & (1 << 9)) != 0; dst[i + 10] = (piece & (1 << 10)) != 0; dst[i + 11] = (piece & (1 << 11)) != 0;
-			dst[i + 12] = (piece & (1 << 12)) != 0;	dst[i + 13] = (piece & (1 << 13)) != 0;	dst[i + 14] = (piece & (1 << 14)) != 0;	dst[i + 15] = (piece & (1 << 15)) != 0;
-			dst[i + 16] = (piece & (1 << 16)) != 0;	dst[i + 17] = (piece & (1 << 17)) != 0;	dst[i + 18] = (piece & (1 << 18)) != 0;	dst[i + 19] = (piece & (1 << 19)) != 0;
-			dst[i + 20] = (piece & (1 << 20)) != 0;	dst[i + 21] = (piece & (1 << 21)) != 0;	dst[i + 22] = (piece & (1 << 22)) != 0;	dst[i + 23] = (piece & (1 << 23)) != 0;
-			dst[i + 24] = (piece & (1 << 24)) != 0;	dst[i + 25] = (piece & (1 << 25)) != 0;	dst[i + 26] = (piece & (1 << 26)) != 0;	dst[i + 27] = (piece & (1 << 27)) != 0;
-			dst[i + 28] = (piece & (1 << 28)) != 0;	dst[i + 29] = (piece & (1 << 29)) != 0;	dst[i + 30] = (piece & (1 << 30)) != 0;	dst[i + 31] = (piece & (1 << 31)) != 0;
+			ret[i + 0] = (piece & (1 << 0)) != 0; ret[i + 1] = (piece & (1 << 1)) != 0;	ret[i + 2] = (piece & (1 << 2)) != 0; ret[i + 3] = (piece & (1 << 3)) != 0;
+			ret[i + 4] = (piece & (1 << 4)) != 0; ret[i + 5] = (piece & (1 << 5)) != 0;	ret[i + 6] = (piece & (1 << 6)) != 0; ret[i + 7] = (piece & (1 << 7)) != 0;
+			ret[i + 8] = (piece & (1 << 8)) != 0; ret[i + 9] = (piece & (1 << 9)) != 0; ret[i + 10] = (piece & (1 << 10)) != 0; ret[i + 11] = (piece & (1 << 11)) != 0;
+			ret[i + 12] = (piece & (1 << 12)) != 0;	ret[i + 13] = (piece & (1 << 13)) != 0;	ret[i + 14] = (piece & (1 << 14)) != 0;	ret[i + 15] = (piece & (1 << 15)) != 0;
+			static_assert(BITS_OF_DWORD == 32, "convertAbsToBinaryArray");
+			ret[i + 16] = (piece & (1 << 16)) != 0;	ret[i + 17] = (piece & (1 << 17)) != 0;	ret[i + 18] = (piece & (1 << 18)) != 0;	ret[i + 19] = (piece & (1 << 19)) != 0;
+			ret[i + 20] = (piece & (1 << 20)) != 0;	ret[i + 21] = (piece & (1 << 21)) != 0;	ret[i + 22] = (piece & (1 << 22)) != 0;	ret[i + 23] = (piece & (1 << 23)) != 0;
+			ret[i + 24] = (piece & (1 << 24)) != 0;	ret[i + 25] = (piece & (1 << 25)) != 0;	ret[i + 26] = (piece & (1 << 26)) != 0;	ret[i + 27] = (piece & (1 << 27)) != 0;
+			ret[i + 28] = (piece & (1 << 28)) != 0;	ret[i + 29] = (piece & (1 << 29)) != 0;	ret[i + 30] = (piece & (1 << 30)) != 0;	ret[i + 31] = (piece & (1 << 31)) != 0;
 		}
 		if (out_digitsSize) {
-			size_t digitsSize = *out_digitsSize;
-			do { --digitsSize; } while (!dst[digitsSize]);
+			do { --digitsSize; } while (!ret[digitsSize]);
 			*out_digitsSize = ++digitsSize;
 		}
-		return dst;
+		return ret;
+	}
+
+	size_t BigInteger::getBitLength() const
+	{
+		if (size == 0) return 0;
+		size_t lowerBound = size * BITS_OF_DWORD - BITS_OF_DWORD;
+		uint32 x = _valPtr[size - 1];
+		while (x) { ++lowerBound; x >>= 1; }
+		return lowerBound;
 	}
 
 	BigInteger BigInteger::pow(uint32 positive_exponent) const
@@ -517,6 +513,8 @@ namespace UPmath
 		return tSquared;
 	}
 
+	//`m` must be a odd number and larger than BigInteger(2) to apply montgomeryModPow method
+	template<bool montgomeryModPow>
 	BigInteger BigInteger::modPow(const BigInteger& exponent, const BigInteger& m) const
 	{
 		if (0 == exponent.size) return BigInteger(1);
@@ -524,11 +522,11 @@ namespace UPmath
 		size_t digitsSizeOfExponent;
 		bool* binaryArrayOfExponent = exponent.convertAbsToBinaryArray(&digitsSizeOfExponent);
 		BigInteger base = exponent.negativity ? this->modInverse(m) : *this;
-		if (base.negativity) {
-			base.absDivideAndSetThisToRemainder(m);
-			base += m;
-		}
-		BigInteger result = base._trivialModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
+		if (base.compareAbsoluteValueTo(m) > 0) base.absDivideAndSetThisToRemainder(m);
+		if (base.negativity) base += m;
+		BigInteger result = !montgomeryModPow ?
+			base._trivialModPow(binaryArrayOfExponent, digitsSizeOfExponent, m) :
+			base._montgomeryModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
 		delete[] binaryArrayOfExponent;
 		return result;
 	}
@@ -550,25 +548,13 @@ namespace UPmath
 		return result;
 	}
 
-	//`m` must be a odd number and larger than both BigInteger(2) and BigInteger(*this) to apply montgomeryModPow method
-	//`exponent` must be positive
-	BigInteger BigInteger::fastModPow(const BigInteger& exponent, const BigInteger& m) const
-	{
-		if (0 == exponent.size) return BigInteger(1);
-		size_t digitsSizeOfExponent;
-		bool* binaryArrayOfExponent = exponent.convertAbsToBinaryArray(&digitsSizeOfExponent);
-		BigInteger result = this->_montgomeryModPow(binaryArrayOfExponent, digitsSizeOfExponent, m);
-		delete[] binaryArrayOfExponent;
-		return result;
-	}
-
 	//http://www.hackersdelight.org/MontgomeryMultiplication.pdf
 	BigInteger BigInteger::_montgomeryModPow(bool* binaryArrayOfExponent, size_t bitsOfExponent, const BigInteger& m) const
 	{
 		BigInteger r(1);
 		r <<= m.size * BITS_OF_DWORD;
-		BigInteger r_(r), m_(m);
-		_EEAstruct eeaStruct = _extendedEuclid(&r_, &m_);
+		BigInteger r_tmp(r), m_tmp(m);
+		_EEAstruct eeaStruct = _extendedEuclid(&r_tmp, &m_tmp);
 		BigInteger r_slash = std::move(*eeaStruct.x);
 		BigInteger m_slash = std::move(*eeaStruct.y); m_slash.negativity = !m_slash.negativity;
 		delete eeaStruct.d; delete eeaStruct.x; delete eeaStruct.y;
@@ -653,28 +639,27 @@ namespace UPmath
 		if (1 == size && _valPtr[0] <= 3) return (_valPtr[0] > 1);
 		if ((_valPtr[0] & 1) == 0) return false;
 		BigInteger thisMinus1(*this); thisMinus1 += BigInteger(-1);
-		BigInteger a(1);
 		double ln_n = log(size * BITS_OF_DWORD);
 		int maxTesterForDeterministicResult = (int)(2.0 * ln_n * ln_n);
+		BigInteger a(1);
 		if (size <= 2) goto qwordTest;
 		if (maxTesterForDeterministicResult <= confidenceFactor) goto drmpt;
 		if (confidenceFactor > 0)
 		{
-qwordTest:	const char testNumbers[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
+qwordTest:	const char kTestNumbers[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37 };
 			int index = 0;
 			do {
-				a._valPtr[0] = testNumbers[index];
+				a._valPtr[0] = kTestNumbers[index];
 				if (a.compareAbsoluteValueTo(thisMinus1) >= 0) return true;
-				if (!_isStrongProbablePrime(a, thisMinus1))	return false;
-			} while (++index < sizeof(testNumbers) / sizeof(char));
+				if (!_MillerRabinPrimalityTest(a, thisMinus1)) return false;
+			} while (++index < sizeof(kTestNumbers) / sizeof(char));
 			if (size > 2) {
-				confidenceFactor -= (sizeof(testNumbers) / sizeof(char));
+				confidenceFactor -= (sizeof(kTestNumbers) / sizeof(char));
+				std::mt19937 mt(gRandomDevice());
 				do {
-					uint32 randomNumber;
-					std::mt19937 mt(gRandomDevice());
-					do { randomNumber = mt(); } while (randomNumber < 2);
-					a._valPtr[0] = randomNumber;
-					if (!_isStrongProbablePrime(a, thisMinus1))	return false;
+					a._valPtr[0] = mt();
+					if (a._valPtr[0] < 41) a._valPtr[0] += 41;
+					if (!_MillerRabinPrimalityTest(a, thisMinus1)) return false;
 				} while (--confidenceFactor > 0);
 			}
 		}
@@ -683,27 +668,132 @@ qwordTest:	const char testNumbers[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 
 drmpt:		uint32 base = 2;
 			do {
 				a._valPtr[0] = base;
-				if (!_isStrongProbablePrime(a, thisMinus1))	return false;
+				if (!_MillerRabinPrimalityTest(a, thisMinus1)) return false;
 			} while (++base <= (uint32)maxTesterForDeterministicResult);
 		}
 		return true;
 	}
 
-	bool BigInteger::_isStrongProbablePrime(const BigInteger& a, const BigInteger& thisMinus1) const
+	//	http://www.sti15.com/nt/pseudoprimes.html
+	bool BigInteger::weakerBailliePSWPrimeTest() const
 	{
-		const BigInteger bigInteger_1(1);
-		if (a.fastModPow(thisMinus1, *this) != bigInteger_1) return false;
+		if (0 == size || negativity) return false;
+		if (1 == size && _valPtr[0] <= 3) return (_valPtr[0] > 1);
+		if ((_valPtr[0] & 1) == 0) return false;
+		BigInteger thisMinus1(*this); thisMinus1 += BigInteger(-1);
+		BigInteger a(2);
+		if (!_MillerRabinPrimalityTest(a, thisMinus1)) return false;
+		if (_LucasPseudoprimeTest()) {
+			a._valPtr[0] = 3;
+			if (_MillerRabinPrimalityTest(a, thisMinus1)) return true;
+			throw std::logic_error("Severe logic flaw detected during `weakerBailliePSWPrimeTest`, please report this issue.");
+		}
+		return false;
+	}
+
+	bool BigInteger::_MillerRabinPrimalityTest(const BigInteger& a, const BigInteger& thisMinus1) const
+	{//logically wrong when *this <= 2
+		const BigInteger kBigInteger_1(1);
+		if (a.modPow<true>(thisMinus1, *this) != kBigInteger_1) return false;
 		BigInteger u(thisMinus1);
 		do { u >>= 1; } while ((u._valPtr[0] & 1) == 0);
-		BigInteger x = a.fastModPow(u, *this);
+		BigInteger x = a.modPow<true>(u, *this);
 		do {
-			BigInteger y = x.fastModPow(x, *this);
-			if (y == bigInteger_1 && x != bigInteger_1 && x != thisMinus1) return false;
+			BigInteger y = _absMultiply(x, x);
+			y.absDivideAndSetThisToRemainder(*this);
+			if (y == kBigInteger_1 && x != kBigInteger_1 && x != thisMinus1) return false;
 			x = std::move(y);
 			u <<= 1;
 		} while (u < *this);
 		if (x != 1) return false;
 		return true;
+	}
+
+	//Calculating the Jacobi symbol according to the properties at https://en.wikipedia.org/wiki/Jacobi_symbol
+	int BigInteger::JacobiSymbol(const BigInteger& upperArgument, const BigInteger& lowerArgument)
+	{
+		if ((!lowerArgument.testBit(0)) | lowerArgument.negativity)
+			throw std::logic_error("lowerArgument of function `JacobiSymbol` must be a positive odd number.");
+		BigInteger denominator(lowerArgument);
+		BigInteger numerator(upperArgument);
+		if (numerator.negativity) {
+			numerator.absDivideAndSetThisToRemainder(denominator);
+			numerator += denominator;
+		}
+		return _JacobiSymbolImpl(&numerator, &denominator);
+	}
+
+	//	http://math.fau.edu/richman/jacobi.htm
+	int BigInteger::_JacobiSymbolImpl(BigInteger* numerator, BigInteger* denominator)
+	{
+		if (denominator->size == 1 && denominator->_valPtr[0] == 1) return 1;//"Following the normal convention for the empty product, (Z / 1) = 1 for all `Z` "
+		if (numerator->size == 0) return 0;
+		numerator->absDivideAndSetThisToRemainder(*denominator);
+		unsigned countFactorsOf2 = 0;
+		for (; false == numerator->testBit(0) && numerator->size != 0; *numerator >>= 1) ++countFactorsOf2;
+		if (gcd(*numerator, *denominator) != 1) return 0;
+		int ret = 1;
+		if (countFactorsOf2 & 1) {
+			uint32 m = denominator->_valPtr[0] % 8;
+			ret = ((m == 1) | (m == 7)) ? 1 : -1;
+		}
+		if (denominator->_valPtr[0] % 4 == 3 && numerator->_valPtr[0] % 4 == 3) ret = -ret;
+		return ret * _JacobiSymbolImpl(denominator, numerator);
+	}
+
+	//	http://stackoverflow.com/questions/38343738/lucas-probable-prime-test
+	std::pair<BigInteger, BigInteger> BigInteger::_getModLucasSequence(const BigInteger& k, const BigInteger& D, const BigInteger& P, const BigInteger& Q) const
+	{
+		BigInteger U_n(1), V_n(P), Q_n(Q);
+		if (V_n < 0) { V_n.absDivideAndSetThisToRemainder(*this); V_n += *this; }
+		if (Q_n < 0) { Q_n.absDivideAndSetThisToRemainder(*this); Q_n += *this;	}
+		BigInteger U(!k.testBit(0) ? 0 : 1);
+		BigInteger V(!k.testBit(0) ? 2 : V_n);
+		BigInteger n(k);
+		n >>= 1;
+		while (n.size)
+		{
+			BigInteger U2 = _absMultiply(U_n, V_n);
+			U2.absDivideAndSetThisToRemainder(*this);
+			BigInteger V2 = _absMultiply(V_n, V_n);
+			V2 -= (Q_n << 1);
+			V2.absDivideAndSetThisToRemainder(*this);
+			if (V2 < 0) V2 += *this;
+			BigInteger Q2 = _absMultiply(Q_n, Q_n);
+			Q2.absDivideAndSetThisToRemainder(*this);
+			if (n._valPtr[0] & 1) {
+				BigInteger newU = _absMultiply(U, V2) + _absMultiply(V, U2);
+				if (newU.testBit(0)) newU += *this;
+				newU >>= 1;
+				newU.absDivideAndSetThisToRemainder(*this);
+				BigInteger newV = _absMultiply(V, V2) + _absMultiply(U, U2) * D;
+				if (newV.testBit(0)) newV += *this;
+				newV >>= 1;
+				newV.absDivideAndSetThisToRemainder(*this);
+				if (newV < 0) newV += *this;
+				U = std::move(newU);
+				V = std::move(newV);
+			}
+			U_n = std::move(U2);
+			V_n = std::move(V2);
+			Q_n = std::move(Q2);
+			n >>= 1;
+		}
+		return std::pair<BigInteger, BigInteger>(U, V);
+	}
+
+	bool BigInteger::_LucasPseudoprimeTest() const
+	{//logically wrong when *this is small
+		int D = 5;
+		do {
+			if (gcd(D, *this) != 1) return 0;
+			if (JacobiSymbol(D, *this) == -1) break;
+			D = -D + ((D < 0) ? 2 : -2);
+		} while (true);
+		const BigInteger Q((1 - D) / 4);
+		BigInteger deltaThis(*this); deltaThis += 1;
+		std::pair<BigInteger, BigInteger> UV = this->_getModLucasSequence(deltaThis, D, 1, Q);
+		return (UV.first.size == 0);
 	}
 
 	//for cryptography
@@ -728,12 +818,13 @@ drmpt:		uint32 base = 2;
 
 	void BigInteger::setLowerBitsToRandom(uint32 bitLength)
 	{
+		if (bitLength == 0) return;
 		std::mt19937 mt(gRandomDevice());
-		if (bitLength > capacity * BITS_OF_DWORD)
-		{
-			size = (bitLength + BITS_OF_DWORD - 1) / BITS_OF_DWORD;
-			_valPtr = new uint32[capacity = _getMinimumCapacity(size)];
-			memset(_valPtr + size - 1, 0, (capacity - size + 1) * sizeof(uint32));
+		uint32 newSize = (bitLength + BITS_OF_DWORD - 1) / BITS_OF_DWORD;
+		if (newSize > size)	{
+			size = newSize;
+			if (size > capacity) _valPtr = new uint32[capacity = _getMinimumCapacity(size)];
+			_valPtr[size - 1] = 0;
 		}
 		uint32 i = 0;
 		while (bitLength >= BITS_OF_DWORD) {
@@ -746,11 +837,10 @@ drmpt:		uint32 base = 2;
 
 	bool BigInteger::testBit(uint32 bitPos) const
 	{
-		const uint32 bitsOfDWORD = sizeof(uint32) * 8;
-		uint32 dwordIndex = bitPos / bitsOfDWORD;
+		uint32 dwordIndex = bitPos / BITS_OF_DWORD;
 		if (dwordIndex >= size) return false;
-		dwordIndex %= bitsOfDWORD;
-		return 0 != (_valPtr[dwordIndex] & (1 << dwordIndex));
+		uint32 bitIndex = bitPos % BITS_OF_DWORD;
+		return 0 != (_valPtr[dwordIndex] & (1 << bitIndex));
 	}
 
 	BigInteger::_SharedMemBigInteger::_SharedMemBigInteger(uint32 size_, uint32* val)

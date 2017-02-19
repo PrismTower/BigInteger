@@ -75,7 +75,7 @@ int main()
 	cout << "To calculate a^n, please input `a` and `n` here: ";
 	string str;
 	cin >> str >> n;
-	BigInteger base(false, str);
+	BigInteger base(str);
 	cout << base << " ^ " << n << " = " << base.pow(n) << endl;
 	
 	cout << "To generate a random prime number of bitLength n, please input n here: ";

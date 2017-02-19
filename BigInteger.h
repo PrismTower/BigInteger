@@ -11,9 +11,10 @@
 namespace UPmath
 {
 #define FFT_MULTIPLICATION
+#define SIZE_OF_PIECE 4
 #define BITS_OF_DWORD 32
 	typedef unsigned int uint32;
-	static_assert(sizeof(uint32) == BITS_OF_DWORD / 8, "sizeof(uint32) must be 4 bytes!");
+	static_assert(sizeof(uint32) == SIZE_OF_PIECE, "sizeof(uint32) must be 4 bytes!");
 
 	extern std::random_device gRandomDevice;
 	
@@ -42,11 +43,10 @@ namespace UPmath
 		const std::string toString() const;
 		char* toHexadecimalCharArray() const;
 		bool* convertAbsToBinaryArray(size_t* out_digitsSize) const;//from lower digit to higher. eg: 4 -> 001
-		bool* convertAbsToBinaryArray(bool* dst, size_t* out_digitsSize) const;//save results to `dst` and get rid of requesting new heap space
+		size_t getBitLength() const;
 
 		void setLowerBitsToRandom(uint32 bitLength);
 		bool testBit(uint32 bitPos) const;
-		void clearToZero();
 		int compareAbsoluteValueTo(const BigInteger&) const;
 		int compareTo(const BigInteger&) const;
 		bool operator==(const BigInteger& rhs) const { return compareTo(rhs) == 0; }
@@ -66,14 +66,14 @@ namespace UPmath
 		const BigInteger& operator%=(const BigInteger&);
 		BigInteger operator%(const BigInteger& rhs) const { return BigInteger(*this) %= rhs; }
 		BigInteger pow(uint32 positive_exponent) const;
-		BigInteger modPow(const BigInteger& exponent, const BigInteger& m) const;
-		BigInteger fastModPow(const BigInteger& exponent, const BigInteger& m) const;
+		BigInteger modInverse(const BigInteger& m) const;//return BigInteger(0) when the inverse doesnot exist
+		//`m` must be a odd number and larger than BigInteger(2) to apply montgomeryModPow method
+		template<bool montgomeryModPow = false> BigInteger modPow(const BigInteger& exponent, const BigInteger& m) const;
 		struct _EEAstruct;
 		static BigInteger gcd(const BigInteger& a, const BigInteger& b);
-		BigInteger modInverse(const BigInteger& m) const;//return BigInteger(0) when the inverse doesnot exist
+		static int JacobiSymbol(const BigInteger& upperArgument, const BigInteger& lowerArgument);
 		bool isPrime(int confidenceFactor = -1) const;
-		//In order to make it convenient to implement multi-thread primality test, I decide to set this func `public`.
-		bool _isStrongProbablePrime(const BigInteger& a, const BigInteger& thisMinus1) const;//logically wrong when *this == 2
+		bool weakerBailliePSWPrimeTest() const;
 
 	private:
 		uint32* _valPtr = nullptr;
@@ -92,7 +92,7 @@ namespace UPmath
 			begin = reinterpret_cast<unsigned short*>(_valPtr);
 			end = reinterpret_cast<unsigned short*>(_valPtr + size);
 		}
-	private:
+	//private: //dbg
 		static bool _isRootsOfUnityInitialized;
 		static void _FFTMultiply(BigInteger& dst, const BigInteger& lhs, const BigInteger& rhs, void* buffer = nullptr);
 #endif
@@ -100,6 +100,11 @@ namespace UPmath
 		BigInteger _montgomeryModPow(bool* binaryArrayOfExponent, size_t bitsOfExponent, const BigInteger& m) const;
 		static _EEAstruct _extendedEuclid(BigInteger* a, BigInteger* b);
 		static BigInteger* _euclidGcd(BigInteger* a, BigInteger* b);
+		bool _MillerRabinPrimalityTest(const BigInteger& a, const BigInteger& thisMinus1) const;//logically wrong when *this <= 2
+		static int _JacobiSymbolImpl(BigInteger* numerator, BigInteger* denominator);
+		std::pair<BigInteger, BigInteger> _getModLucasSequence(const BigInteger& k, const BigInteger& D, const BigInteger& P, const BigInteger& Q) const;
+		std::pair<BigInteger, BigInteger> _getModLucasSequence(BigInteger* k, const BigInteger& D, const BigInteger& P) const;
+		bool _LucasPseudoprimeTest() const;//logically wrong when *this <= 2
 
 		static unsigned char _requiredCapacityList[129];
 		static uint32 _calcMinimumCapacity(uint32 size_);
@@ -115,18 +120,13 @@ namespace UPmath
 
 	class BigInteger::_SharedMemBigInteger : public BigInteger {
 	public:
-		inline _SharedMemBigInteger(const BigInteger& source) {
-			_valPtr = source._valPtr;
-			negativity = source.negativity;
-			capacity = source.capacity;
-			size = source.size;
-		}
+		_SharedMemBigInteger(const BigInteger& src) { _valPtr = src._valPtr; negativity = src.negativity; capacity = src.capacity; size = src.size;	}
 		_SharedMemBigInteger(uint32 size_, uint32* val);
 		~_SharedMemBigInteger() { _valPtr = nullptr; }
 	};
 
-	inline BigInteger operator+(const BigInteger& lhs, const BigInteger& rhs) { return BigInteger(lhs) += rhs; }
-	inline BigInteger operator-(const BigInteger& lhs, const BigInteger& rhs) { return BigInteger(lhs) -= rhs; }
+	template <class T> T operator+(const T& lhs, const T& rhs) { return T(lhs) += rhs; }
+	template <class T> T operator-(const T& lhs, const T& rhs) { return T(lhs) -= rhs; }
 	template <class T> T operator>>(const T& lhs, const uint32 shift) { return T(lhs) >>= shift; }
 	template <class T> T operator<<(const T& lhs, const uint32 shift) { return T(lhs) <<= shift; }
 
