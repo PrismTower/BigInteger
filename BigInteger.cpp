@@ -632,7 +632,7 @@ namespace UPmath
 	//Set `confidenceFactor` <= 0 to run Deterministic Robin-Miller Primality Test.
 	//When testing integers contain more than 1000 bits, it makes it a LITTLE BIT faster to 
 	//set `confidenceFactor` to a positive number at the expense of 
-	//the probability of getting a wrong result is no more than 2^(-confidenceFactor)
+	//the probability of getting a wrong result is no more than 4^(-confidenceFactor)
 	bool BigInteger::isPrime(int confidenceFactor) const
 	{
 		if (0 == size || negativity) return false;
@@ -705,7 +705,7 @@ drmpt:		uint32 base = 2;
 			x = std::move(y);
 			u <<= 1;
 		} while (u < *this);
-		if (x != 1) return false;
+		if (x != kBigInteger_1) return false;
 		return true;
 	}
 
@@ -761,7 +761,7 @@ drmpt:		uint32 base = 2;
 			if (V2 < 0) V2 += *this;
 			BigInteger Q2 = _absMultiply(Q_n, Q_n);
 			Q2.absDivideAndSetThisToRemainder(*this);
-			if (n._valPtr[0] & 1) {
+			if ((n._valPtr[0] & 1)) {
 				BigInteger newU = _absMultiply(U, V2) + _absMultiply(V, U2);
 				if (newU.testBit(0)) newU += *this;
 				newU >>= 1;
@@ -794,6 +794,41 @@ drmpt:		uint32 base = 2;
 		BigInteger deltaThis(*this); deltaThis += 1;
 		std::pair<BigInteger, BigInteger> UV = this->_getModLucasSequence(deltaThis, D, 1, Q);
 		return (UV.first.size == 0);
+	}
+
+	//Warnning: not suitable when *this has more than 10k bits
+	BigInteger BigInteger::nextProbablePrime() const
+	{
+		if (this->negativity || this->size == 0) return BigInteger(2);
+		BigInteger ret(*this);
+		if (ret.size == 1) {
+			while (true) {
+				ret += 1;
+				if (ret.isPrime()) return ret;
+			}
+		}
+		if ((ret._valPtr[0] & 1) == 0) ++ret._valPtr[0];
+		else ret += 2;
+		const char kTestNumbers[] = { 3, 5, 7, 11, 13, 17, 19, 23 };
+		BigInteger m(2);
+		static_assert(sizeof(char) == 1, "");
+		uint32 modList[sizeof(kTestNumbers)];
+		for (int i = 0; i < sizeof(kTestNumbers); ++i) {
+			m._valPtr[0] = kTestNumbers[i];
+			BigInteger x(ret);
+			x.absDivideAndSetThisToRemainder(m);
+			modList[i] = x.size ? x._valPtr[0] : 0;
+		}
+		while (true)
+		{
+			bool multipleOfTestNumbers = false;
+			for (int i = 0; i < sizeof(kTestNumbers); ++i) {
+				if (0 == modList[i] % kTestNumbers[i]) multipleOfTestNumbers = true;
+				modList[i] += 2;
+			}
+			if (!multipleOfTestNumbers && ret.weakerBailliePSWPrimeTest()) return ret;
+			ret += 2;
+		}
 	}
 
 	//for cryptography

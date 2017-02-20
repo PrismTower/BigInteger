@@ -1,5 +1,5 @@
 //Open source under MIT license. https://github.com/PrismTower/BigInteger
-//Remember to add parameter -std=c++11 if you use g++ as the compiler.
+//Remember to add parameter -O3 -std=c++11 if you use g++ as the compiler.
 
 #pragma once
 #include <iostream>
@@ -74,6 +74,7 @@ namespace UPmath
 		static int JacobiSymbol(const BigInteger& upperArgument, const BigInteger& lowerArgument);
 		bool isPrime(int confidenceFactor = -1) const;
 		bool weakerBailliePSWPrimeTest() const;
+		BigInteger nextProbablePrime() const;
 
 	private:
 		uint32* _valPtr = nullptr;
@@ -82,17 +83,18 @@ namespace UPmath
 		void _setSize(uint32 maxPossibleSize);
 		void _absSubtract(const BigInteger& rhs);//only if abs(rhs) <= abs(*this)
 		static BigInteger _absMultiply(const BigInteger& lhs, const BigInteger& rhs);
-		void BigInteger::_seperateToHigherAndLowerHalfs(BigInteger* dst) const;
+		void _seperateToHigherAndLowerHalfs(BigInteger* dst) const;
 #ifdef FFT_MULTIPLICATION
 #define FFT_MAX_N 1024u
 #define FFT_WORD_BITLEN 16
+#define _IS_LITTLE_ENDIAN() (true)
 	public:
 		inline void _FFTgetBeginAndEndOfVal(unsigned short* &begin, unsigned short* &end) const
 		{ 
 			begin = reinterpret_cast<unsigned short*>(_valPtr);
 			end = reinterpret_cast<unsigned short*>(_valPtr + size);
 		}
-	//private: //dbg
+	private:
 		static bool _isRootsOfUnityInitialized;
 		static void _FFTMultiply(BigInteger& dst, const BigInteger& lhs, const BigInteger& rhs, void* buffer = nullptr);
 #endif
@@ -103,7 +105,6 @@ namespace UPmath
 		bool _MillerRabinPrimalityTest(const BigInteger& a, const BigInteger& thisMinus1) const;//logically wrong when *this <= 2
 		static int _JacobiSymbolImpl(BigInteger* numerator, BigInteger* denominator);
 		std::pair<BigInteger, BigInteger> _getModLucasSequence(const BigInteger& k, const BigInteger& D, const BigInteger& P, const BigInteger& Q) const;
-		std::pair<BigInteger, BigInteger> _getModLucasSequence(BigInteger* k, const BigInteger& D, const BigInteger& P) const;
 		bool _LucasPseudoprimeTest() const;//logically wrong when *this <= 2
 
 		static unsigned char _requiredCapacityList[129];

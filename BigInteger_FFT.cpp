@@ -12,18 +12,17 @@ namespace UPmath
 		struct Complex {
 			double re, im;
 			Complex(double re = 0.0, double im = 0.0) : re(re), im(im) {}
-			static const Complex add(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re + rhs.re, lhs.im + rhs.im); }
-			void add(const Complex& rhs) { re += rhs.re; im += rhs.im; }
-			static const Complex subtract(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re - rhs.re, lhs.im - rhs.im); }
-			static const Complex multiply(const Complex& lhs, const Complex& rhs) {	return Complex(lhs.re * rhs.re - lhs.im * rhs.im, lhs.re * rhs.im + rhs.re * lhs.im); }
+			static Complex add(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re + rhs.re, lhs.im + rhs.im); }
+			static Complex subtract(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re - rhs.re, lhs.im - rhs.im); }
+			static Complex multiply(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re * rhs.re - lhs.im * rhs.im, lhs.re * rhs.im + rhs.re * lhs.im); }
 		};
 
 #define FFT_WORD_SIZE (FFT_WORD_BITLEN / 8)
-		const union {
+		/*const union {
 			uint32 uint_value;
 			char char_value[4];
 		} _EndianCheckUnion = { 0x11223344 };
-		constexpr bool _IS_LITTLE_ENDIAN() { return _EndianCheckUnion.char_value[0] == 0x44; }
+		constexpr bool _IS_LITTLE_ENDIAN() { return _EndianCheckUnion.char_value[0] == 0x44; }*/
 
 		struct Coefficients {
 			unsigned short *begin, *end;
@@ -37,8 +36,8 @@ namespace UPmath
 					return Complex(begin < end ? (double)*begin : 0.0);
 				else {//WARNING: no tests has been done for big endian machines.
 					if (begin >= end) return Complex();
-					if ((size_t)begin & FFT_WORD_SIZE) return (double)*(begin - FFT_WORD_SIZE);
-					return (double)*(begin + FFT_WORD_SIZE);
+					if ((size_t)begin & FFT_WORD_SIZE) return (double)*(begin - 1);
+					return (double)*(begin + 1);
 				}
 			}
 		};
@@ -97,7 +96,7 @@ namespace UPmath
 		bool newMemAlloced = (nullptr == buffer);
 		if (newMemAlloced) buffer = operator new(n * 3 * sizeof(BigInteger_FFT_Precedures::Complex));
 		BigInteger_FFT_Precedures::Complex* _buffer = reinterpret_cast<BigInteger_FFT_Precedures::Complex*>(buffer);
-		//multi-threading is beneficial little here
+		//multi-threading benefits little here
 		BigInteger_FFT_Precedures::Coefficients A(lhs, n);
 		BigInteger_FFT_Precedures::Complex* lhsValues = _buffer + n;
 		BigInteger_FFT_Precedures::FFT(lhsValues, _buffer, A, kOmegaIndex);
@@ -119,11 +118,11 @@ namespace UPmath
 		static_assert(sizeof(unsigned long long) > sizeof(uint32), "");
 		for (uint32 pieceIndex = 0; pieceIndex < newCapa; ++pieceIndex)	{
 			//double er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
-			t += unsigned long long((products++)->re / n + 0.5);
+			t += (unsigned long long)((products++)->re / n + 0.5);
 			dst._valPtr[pieceIndex] = t & ((1 << FFT_WORD_BITLEN) - 1);
 			t >>= FFT_WORD_BITLEN;
 			//er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
-			t += unsigned long long((products++)->re / n + 0.5);
+			t += (unsigned long long)((products++)->re / n + 0.5);
 			dst._valPtr[pieceIndex] |= uint32(t) << FFT_WORD_BITLEN;
 			t >>= FFT_WORD_BITLEN;
 		}
