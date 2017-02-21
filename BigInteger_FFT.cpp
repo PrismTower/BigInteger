@@ -11,16 +11,16 @@ namespace UPmath
 	{
 		struct Complex {
 			double re, im;
-			Complex(double re = 0.0, double im = 0.0) : re(re), im(im) {}
+			Complex(double _re = 0.0, double _im = 0.0) : re(_re), im(_im) { }
 			static Complex add(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re + rhs.re, lhs.im + rhs.im); }
 			static Complex subtract(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re - rhs.re, lhs.im - rhs.im); }
-			static Complex multiply(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re * rhs.re - lhs.im * rhs.im, lhs.re * rhs.im + rhs.re * lhs.im); }
+			static Complex multiply(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re * rhs.re - lhs.im * rhs.im, lhs.re * rhs.im + lhs.im * rhs.re); }
 		};
 
 #define FFT_WORD_SIZE (FFT_WORD_BITLEN / 8)
 		/*const union {
-			uint32 uint_value;
-			char char_value[4];
+		uint32 uint_value;
+		char char_value[4];
 		} _EndianCheckUnion = { 0x11223344 };
 		constexpr bool _IS_LITTLE_ENDIAN() { return _EndianCheckUnion.char_value[0] == 0x44; }*/
 
@@ -30,14 +30,14 @@ namespace UPmath
 			uint32 interval;
 			uint32 n;
 			Coefficients(const BigInteger& src, uint32 n) : interval(1), n(n) { src._FFTgetBeginAndEndOfVal(begin, end); }
-			inline const Complex getComplexNumber() const
+			inline Complex getComplexNumber(uint32 i) const
 			{
 				if (_IS_LITTLE_ENDIAN())
-					return Complex(begin < end ? (double)*begin : 0.0);
+					return Complex(begin + i < end ? (double)begin[i] : 0.0);
 				else {//WARNING: no tests has been done for big endian machines.
-					if (begin >= end) return Complex();
-					if ((size_t)begin & FFT_WORD_SIZE) return (double)*(begin - 1);
-					return (double)*(begin + 1);
+					if (begin + i >= end) return Complex();
+					if ((size_t)begin & FFT_WORD_SIZE) return (double)begin[i - 1];
+					return (double)begin[i + 1];
 				}
 			}
 		};
@@ -47,7 +47,7 @@ namespace UPmath
 			uint32 interval;
 			uint32 n;
 			ValueRepresentation(Complex* src, uint32 n) : interval(1), n(n), begin(src) { }
-			inline const Complex& getComplexNumber() const { return *begin; }
+			inline const Complex& getComplexNumber(uint32 i) const { return begin[i]; }
 		};
 
 		Complex kRootsOfUnity[FFT_MAX_N];
@@ -62,17 +62,33 @@ namespace UPmath
 
 		inline uint32 getIndexOfPower(uint32 omegaIndex, uint32 pow) { return (omegaIndex * pow) % FFT_MAX_N; }
 
-		//`InputType` should be either `Coefficients` or `ValueRepresentation`
-		template <typename InputType>
+		//`InputType` should be either `Coefficients` (isReverse = false)  or  `ValueRepresentation` (isReverse = true)
+		template <bool isReverse, typename InputType>
 		void FFT(Complex* dst, Complex* buffer, const InputType& src, uint32 omegaIndex)
-		{
-			if (1 == src.n) { dst[0] = src.getComplexNumber(); return; }
+		{//Warning: src.n cannot be smaller than 4
+			if (src.n <= 4) {
+				Complex x = src.getComplexNumber(0);
+				Complex y = src.getComplexNumber(src.interval * 2);
+				buffer[0] = Complex::add(x, y);
+				buffer[1] = Complex::subtract(x, y);
+				x = src.getComplexNumber(src.interval);
+				y = src.getComplexNumber(src.interval * 3);
+				buffer[2] = Complex::add(x, y);
+				buffer[3] = Complex::subtract(x, y);
+				Complex wjAo = buffer[2];
+				dst[0] = Complex::add(buffer[0], wjAo);
+				dst[2] = Complex::subtract(buffer[0], wjAo);
+				wjAo = !isReverse ? Complex(-buffer[3].im, buffer[3].re) : Complex(buffer[3].im, -buffer[3].re);
+				dst[1] = Complex::add(buffer[1], wjAo);
+				dst[3] = Complex::subtract(buffer[1], wjAo);
+				return;
+			}
 			InputType A(src);
 			A.interval <<= 1;
 			A.n >>= 1;
-			FFT(buffer, dst, A, getIndexOfPower(omegaIndex, 2));//A even
+			FFT<isReverse>(buffer, dst, A, getIndexOfPower(omegaIndex, 2));//A even
 			A.begin += src.interval;
-			FFT(buffer + A.n, dst, A, getIndexOfPower(omegaIndex, 2));//A odd
+			FFT<isReverse>(buffer + A.n, dst, A, getIndexOfPower(omegaIndex, 2));//A odd
 			for (uint32 j = 0; j < A.n; ++j) {
 				Complex wjAo = Complex::multiply(kRootsOfUnity[getIndexOfPower(omegaIndex, j)], (buffer + A.n)[j]);
 				dst[j] = Complex::add(buffer[j], wjAo);
@@ -99,15 +115,15 @@ namespace UPmath
 		//multi-threading benefits little here
 		BigInteger_FFT_Precedures::Coefficients A(lhs, n);
 		BigInteger_FFT_Precedures::Complex* lhsValues = _buffer + n;
-		BigInteger_FFT_Precedures::FFT(lhsValues, _buffer, A, kOmegaIndex);
+		BigInteger_FFT_Precedures::FFT<false>(lhsValues, _buffer, A, kOmegaIndex);
 		BigInteger_FFT_Precedures::Coefficients B(rhs, n);
 		BigInteger_FFT_Precedures::Complex* rhsValues = lhsValues + n;
-		BigInteger_FFT_Precedures::FFT(rhsValues, _buffer, B, kOmegaIndex);
+		BigInteger_FFT_Precedures::FFT<false>(rhsValues, _buffer, B, kOmegaIndex);
 		for (uint32 j = 0; j < n; ++j)
 			_buffer[j] = BigInteger_FFT_Precedures::Complex::multiply(*lhsValues++, *rhsValues++);
 		BigInteger_FFT_Precedures::ValueRepresentation C(_buffer, n);
 		BigInteger_FFT_Precedures::Complex* products = _buffer + n;
-		BigInteger_FFT_Precedures::FFT(products, products + n, C, FFT_MAX_N - kOmegaIndex);
+		BigInteger_FFT_Precedures::FFT<true>(products, products + n, C, FFT_MAX_N - kOmegaIndex);
 
 		uint32 newCapa = n / (BITS_OF_DWORD / FFT_WORD_BITLEN);
 		if (newCapa > dst.capacity) {
@@ -116,7 +132,7 @@ namespace UPmath
 		}
 		unsigned long long t = 0;
 		static_assert(sizeof(unsigned long long) > sizeof(uint32), "");
-		for (uint32 pieceIndex = 0; pieceIndex < newCapa; ++pieceIndex)	{
+		for (uint32 pieceIndex = 0; pieceIndex < newCapa; ++pieceIndex) {
 			//double er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
 			t += (unsigned long long)((products++)->re / n + 0.5);
 			dst._valPtr[pieceIndex] = t & ((1 << FFT_WORD_BITLEN) - 1);
@@ -127,7 +143,7 @@ namespace UPmath
 			t >>= FFT_WORD_BITLEN;
 		}
 		dst._setSize(newCapa);
-		
+
 		if (newMemAlloced) operator delete(buffer);
 	}
 
