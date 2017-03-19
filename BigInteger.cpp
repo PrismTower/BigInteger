@@ -6,6 +6,9 @@ namespace UPmath
 {
 	std::random_device gRandomDevice;
 
+	const BigInteger BigInteger::kBigInteger_0 = BigInteger(0);
+	const BigInteger BigInteger::kBigInteger_1 = BigInteger(1);
+
 	BigInteger::BigInteger() { }
 
 	BigInteger::BigInteger(int num)
@@ -60,7 +63,6 @@ namespace UPmath
 
 	BigInteger::BigInteger(const BigInteger& source)
 	{
-		if (this == &source) return;
 		negativity = source.negativity;
 		size = source.size;
 		capacity = _getMinimumCapacity(size);
@@ -108,21 +110,6 @@ namespace UPmath
 	BigInteger::BigInteger(const std::string& str) :
 		BigInteger((str.length() >= 2 && str[0] == '0' && (('\x5F' & str[1]) == 'X')), str) { }
 
-	//things will go wrong if you _push 0 without _pushing a positive number in the end
-	void BigInteger::_push(const uint32 value)
-	{
-		if (capacity > size)
-			_valPtr[size++] = value;
-		else {
-			uint32* newptr = new uint32[capacity <<= 1];
-			uint32* temptr = newptr + size;
-			while (newptr < temptr)	*(newptr++) = *(_valPtr++);
-			*newptr = value;
-			delete[] (_valPtr -= size);
-			_valPtr = newptr - size++;
-		}
-	}
-
 	void BigInteger::_setSize(uint32 maxPossibleSize)
 	{
 		if ((size = maxPossibleSize))
@@ -164,17 +151,19 @@ namespace UPmath
 		int result = compareAbsoluteValueTo(rhs);
 		return negativity ? -result : result;
 	}
-
+	
+	//only if abs(rhs) <= abs(*this)
 	void BigInteger::_absSubtract(const BigInteger& rhs)
 	{
-		uint32 temp;
-		for (uint32 ti = 0, *ptr = _valPtr; ti < rhs.size; ++ti, ++ptr) {
-			temp = *ptr;
-			if ((*ptr -= rhs._valPtr[ti]) > temp) {
-				uint32 _i = ti;
-				while (true) if (_valPtr[++_i]--) break;
-			}
+		bool borrowFlag = false;
+		uint32* ptr = _valPtr;
+		for (uint32 ti = 0; ti < rhs.size; ++ti, ++ptr) {
+			uint32 temp = *ptr;
+			*ptr -= rhs._valPtr[ti];
+			*ptr -= borrowFlag;
+			borrowFlag = (*ptr > temp) | ((*ptr == temp) & borrowFlag);
 		}
+		if (borrowFlag) while (true) if ((*(ptr++))--) break;
 		_setSize(size);
 	}
 
@@ -200,15 +189,25 @@ namespace UPmath
 			}
 			l_ptr = _valPtr;
 			r_ptr = rhs._valPtr;
+			bool carryFlag = false;
 			for (c_ptr = rhs._valPtr + commonPiecesCount; r_ptr < c_ptr; ++l_ptr, ++r_ptr)
 			{
-				if ((*l_ptr += *r_ptr) < *r_ptr) {
-					uint32 _i = l_ptr - _valPtr;
-					while (++_i < size) if (++_valPtr[_i]) break;
-					if (_i == size) {
-						_i = l_ptr - _valPtr;
-						_push(1);
-						l_ptr = _valPtr + _i;
+				*l_ptr += *r_ptr;
+				*l_ptr += carryFlag;
+				carryFlag = (*l_ptr < *r_ptr) | ((*l_ptr == *r_ptr) & carryFlag);
+			}
+			if (carryFlag) {
+				for (c_ptr = _valPtr + size; l_ptr < c_ptr; ++l_ptr) if (++*l_ptr) break;
+				if (l_ptr == c_ptr) {
+					if (capacity > size)
+						_valPtr[size++] = 1;
+					else {
+						l_ptr = new uint32[capacity <<= 1];
+						c_ptr = l_ptr + size;
+						while (l_ptr < c_ptr) *(l_ptr++) = *(_valPtr++);
+						*l_ptr = 1;
+						delete[] (_valPtr -= size);
+						_valPtr = l_ptr - size++;
 					}
 				}
 			}
@@ -235,7 +234,7 @@ namespace UPmath
 
 	const BigInteger& BigInteger::operator>>=(const uint32 shift)
 	{
-		uint32 a = shift >> 5;
+		uint32 a = shift / BITS_OF_DWORD;
 		if (a >= size) { this->size = 0; return *this; }
 		else if (a) {
 			uint32 i = 0;
@@ -261,7 +260,7 @@ namespace UPmath
 	{
 		if (size)
 		{
-			uint32 a = shift >> 5, b = shift & (BITS_OF_DWORD - 1);
+			uint32 a = shift / BITS_OF_DWORD, b = shift & (BITS_OF_DWORD - 1);
 			bool newMemAlloced = false;
 			if (b) ++a;
 			if (a) {
@@ -284,7 +283,7 @@ namespace UPmath
 					_valPtr = tarptr;
 				}
 			}
-			if (b) *this >>= (32 - b);
+			if (b) *this >>= (BITS_OF_DWORD - b);
 		}
 		return *this;
 	}
@@ -312,7 +311,7 @@ namespace UPmath
 		if ((!lhs.size) | (!rhs.size)) return BigInteger();
 #ifdef FFT_MULTIPLICATION
 		uint32 sizeSum = lhs.size + rhs.size;
-		if (sizeSum == 2) return BigInteger((unsigned long long)*lhs._valPtr * *rhs._valPtr);
+		if (sizeSum == 2) return BigInteger((unsigned long long)lhs._valPtr[0] * rhs._valPtr[0]);
 		if (sizeSum <= FFT_MAX_N / (BITS_OF_DWORD / FFT_WORD_BITLEN)) {
 			BigInteger ret;
 			_FFTMultiply(ret, lhs, rhs);
@@ -341,58 +340,65 @@ namespace UPmath
 			BigInteger lower_part = _absMultiply(lhsParts[1], rhsParts[1]);
 			BigInteger mid_part = higher_part + lower_part;
 			mid_part += ((lhsParts[1] - lhsParts[0]) * (rhsParts[0] - rhsParts[1]));
-			higher_part <<= (lhs.capacity << 5);
-			mid_part <<= (lhs.capacity << 4);
+			higher_part <<= (lhs.capacity * BITS_OF_DWORD);
+			mid_part <<= (lhs.capacity * (BITS_OF_DWORD / 2));
 			higher_part += (mid_part += lower_part);
 			return higher_part;
 		}
 		return BigInteger((unsigned long long)*lhs._valPtr * *rhs._valPtr);
 	}
 	
+	//Set *this to remainder and return the quotient.
+	//It is ok to execute this->absDivideAndSetThisToRemainder(*this)
 	BigInteger BigInteger::absDivideAndSetThisToRemainder(const BigInteger& rhs)
-	{//set *this to remainder and return the quotient
-		if (this == &rhs) {	this->size = 0; return BigInteger(1); }
+	{
 		int pDiff = this->size - rhs.size;
 		if (0 == rhs.size) throw std::logic_error("Divide by zero");
 		if (pDiff < 0) return BigInteger();
-		int pow = ((pDiff + 1) << 5);
-		bool* binaryList = new bool[pow];
-		BigInteger newrhs(rhs); newrhs <<= --pow;
-		int leftMostBit = -1;
-		do {
-			if (newrhs.compareAbsoluteValueTo(*this) > 0)
-				binaryList[pow] = false;
-			else {
-				this->_absSubtract(newrhs);
-				binaryList[pow] = true;
-				if (leftMostBit < 0) leftMostBit = pow;
-			}
+		int pow = pDiff * BITS_OF_DWORD;
+		int lhsLeftmostBitLen = 0, rhsLeftmostBitLen = 0;
+		for (uint32 lhsLeftmost = _valPtr[size - 1], rhsLeftmost = rhs._valPtr[rhs.size - 1]; lhsLeftmost | rhsLeftmost; ) {
+			if (lhsLeftmost) ++lhsLeftmostBitLen;
+			if (rhsLeftmost) ++rhsLeftmostBitLen;
+			lhsLeftmost >>= 1; rhsLeftmost >>= 1;
+		}
+		pow += 1 + lhsLeftmostBitLen - rhsLeftmostBitLen;
+		if (pow <= 0) return BigInteger();
+		BigInteger newrhs(rhs);//ok if &rhs == this
+		newrhs <<= --pow;
+		int leftMostBit = pow;
+		bool fillOne = !(newrhs.compareAbsoluteValueTo(*this) > 0);
+		if (fillOne)
+			this->_absSubtract(newrhs);
+		else if (--leftMostBit < 0)
+			return BigInteger();
+		bool* binaryList = new bool[pow + 1];
+		binaryList[pow] = fillOne;
+		while (--pow >= 0) {
 			newrhs >>= 1;
-		} while (--pow >= 0);
-		if (leftMostBit < 0) {
-			delete[] binaryList;
-			return BigInteger(0);
+			fillOne = binaryList[pow] = !(newrhs.compareAbsoluteValueTo(*this) > 0);
+			if (fillOne) this->_absSubtract(newrhs);
 		}
 		BigInteger ret;
 		ret.size = 1 + ((uint32)leftMostBit / BITS_OF_DWORD);
 		ret._valPtr = new uint32[ret.capacity = _getMinimumCapacity(ret.size)];
-		for (uint32 piece = 0; pow < leftMostBit; ++piece)
-		{
+		for (uint32 piece = 0; pow < leftMostBit; ++piece) {
 			ret._valPtr[piece] = 0;
-			for (uint32 bi = 0; bi < BITS_OF_DWORD; ++bi)
+			int biMax = leftMostBit - pow;
+			if (biMax > BITS_OF_DWORD) biMax = BITS_OF_DWORD;
+			for (int bi = 0; bi < biMax; ++bi)
 				ret._valPtr[piece] |= ((uint32)binaryList[++pow] << bi);
 		}
 		delete[] binaryList;
 		return ret;
 	}
 
-	BigInteger operator/(const BigInteger& lhs, const BigInteger& rhs)
+	const BigInteger& BigInteger::operator/=(const BigInteger& rhs)
 	{
-		BigInteger newlhs(lhs);
-		newlhs.negativity = false;
-		BigInteger ret = newlhs.absDivideAndSetThisToRemainder(rhs);
-		ret.negativity = (lhs.negativity != rhs.negativity);
-		return ret;
+		bool neg_ = (this->negativity != rhs.negativity);
+		*this = this->absDivideAndSetThisToRemainder(rhs);
+		this->negativity = neg_;
+		return *this;
 	}
 
 	const BigInteger& BigInteger::operator%=(const BigInteger& rhs)
@@ -500,6 +506,22 @@ namespace UPmath
 		return lowerBound;
 	}
 
+	BigInteger BigInteger::sqrt(bool ceilling) const
+	{//x = (prev_x + *this/prev_x) / 2
+		if (this->negativity && this->size != 0) throw std::logic_error("Cannot evaluate square root of a negative Biginteger.");
+		BigInteger x(1), prev_x;
+		do {
+			prev_x = x;
+			x += *this / prev_x;
+			x >>= 1;
+		} while (x != prev_x);
+		if (ceilling) {
+			BigInteger xSquared = x * x;
+			if (xSquared < *this) x += kBigInteger_1;
+		}
+		return x;
+	}
+
 	BigInteger BigInteger::pow(uint32 positive_exponent) const
 	{
 		if (0 == positive_exponent) return BigInteger(1);
@@ -514,11 +536,12 @@ namespace UPmath
 	}
 
 	//`m` must be a odd number and larger than BigInteger(2) to apply montgomeryModPow method
-	template<bool montgomeryModPow>
 	BigInteger BigInteger::modPow(const BigInteger& exponent, const BigInteger& m) const
 	{
 		if (0 == exponent.size) return BigInteger(1);
 		if ((0 == m.size) | m.negativity) throw std::logic_error("modular for `modPow` function must be positive.");
+		if (1 == (m._valPtr[0] | m.size)) return BigInteger(0);
+		bool montgomeryModPow = m._valPtr[0] & 1;
 		size_t digitsSizeOfExponent;
 		bool* binaryArrayOfExponent = exponent.convertAbsToBinaryArray(&digitsSizeOfExponent);
 		BigInteger base = exponent.negativity ? this->modInverse(m) : *this;
@@ -592,7 +615,7 @@ namespace UPmath
 	BigInteger BigInteger::modInverse(const BigInteger& m) const
 	{
 		if ((0 == m.size) | m.negativity) throw std::logic_error("modular for `modInverse` function must be positive.");
-		if (gcd(*this, m) != BigInteger(1)) return BigInteger(0);
+		if (gcd(*this, m) != kBigInteger_1) return BigInteger(0);
 		BigInteger a_(*this), m_(m);
 		_EEAstruct eeaStruct = _extendedEuclid(&a_, &m_);
 		BigInteger ddd = *this * *eeaStruct.x + m * *eeaStruct.y;
@@ -693,11 +716,10 @@ drmpt:		uint32 base = 2;
 
 	bool BigInteger::_MillerRabinPrimalityTest(const BigInteger& a, const BigInteger& thisMinus1) const
 	{//logically wrong when *this <= 2
-		const BigInteger kBigInteger_1(1);
-		if (a.modPow<true>(thisMinus1, *this) != kBigInteger_1) return false;
+		if (a.modPow(thisMinus1, *this) != kBigInteger_1) return false;
 		BigInteger u(thisMinus1);
 		do { u >>= 1; } while ((u._valPtr[0] & 1) == 0);
-		BigInteger x = a.modPow<true>(u, *this);
+		BigInteger x = a.modPow(u, *this);
 		do {
 			BigInteger y = _absMultiply(x, x);
 			y.absDivideAndSetThisToRemainder(*this);
@@ -801,12 +823,8 @@ drmpt:		uint32 base = 2;
 	{
 		if (this->negativity || this->size == 0) return BigInteger(2);
 		BigInteger ret(*this);
-		if (ret.size == 1) {
-			while (true) {
-				ret += 1;
-				if (ret.isPrime()) return ret;
-			}
-		}
+		if (ret.size == 1)
+			while (true) if ((ret += kBigInteger_1).isPrime()) return ret;
 		if ((ret._valPtr[0] & 1) == 0) ++ret._valPtr[0];
 		else ret += 2;
 		const char kTestNumbers[] = { 3, 5, 7, 11, 13, 17, 19, 23 };
@@ -824,7 +842,7 @@ drmpt:		uint32 base = 2;
 			bool multipleOfTestNumbers = false;
 			for (int i = 0; i < sizeof(kTestNumbers); ++i) {
 				if (0 == modList[i] % kTestNumbers[i]) multipleOfTestNumbers = true;
-				modList[i] += 2;
+				modList[i] += 2;//it may overflow until we find a next prime if *this is very large
 			}
 			if (!multipleOfTestNumbers && ret.weakerBailliePSWPrimeTest()) return ret;
 			ret += 2;
@@ -884,5 +902,156 @@ drmpt:		uint32 base = 2;
 		_setSize(size_);
 		capacity = _getMinimumCapacity(size);
 	}
+
+
+#ifdef FFT_MULTIPLICATION
+	bool BigInteger::_isRootsOfUnityInitialized = false;
+
+	namespace BigInteger_FFT_Precedures
+	{
+		struct Complex {
+			double re, im;
+			Complex(double _re = 0.0, double _im = 0.0) : re(_re), im(_im) { }
+			static Complex add(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re + rhs.re, lhs.im + rhs.im); }
+			static Complex subtract(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re - rhs.re, lhs.im - rhs.im); }
+			static Complex multiply(const Complex& lhs, const Complex& rhs) { return Complex(lhs.re * rhs.re - lhs.im * rhs.im, lhs.re * rhs.im + lhs.im * rhs.re); }
+		};
+
+#define FFT_WORD_SIZE (FFT_WORD_BITLEN / 8)
+		/*const union {
+		uint32 uint_value;
+		char char_value[4];
+		} _EndianCheckUnion = { 0x11223344 };
+		constexpr bool _IS_LITTLE_ENDIAN() { return _EndianCheckUnion.char_value[0] == 0x44; }*/
+
+		struct Coefficients {
+			unsigned short *begin, *end;
+			static_assert(sizeof(unsigned short) == FFT_WORD_SIZE, "Length of FFT_WORD is 16bits, which differs from sizeof(unsigned short).");
+			uint32 interval;
+			uint32 n;
+			Coefficients(const BigInteger& src, uint32 n) : interval(1), n(n) { src._FFTgetBeginAndEndOfVal(begin, end); }
+			inline Complex getComplexNumber(uint32 i) const
+			{
+				if (_IS_LITTLE_ENDIAN())
+					return Complex(begin + i < end ? (double)begin[i] : 0.0);
+				else {//WARNING: no tests has been done for big endian machines.
+					if (begin + i >= end) return Complex();
+					if ((size_t)begin & FFT_WORD_SIZE) return (double)begin[i - 1];
+					return (double)begin[i + 1];
+				}
+			}
+		};
+
+		struct ValueRepresentation {
+			Complex* begin;
+			uint32 interval;
+			uint32 n;
+			ValueRepresentation(Complex* src, uint32 n) : interval(1), n(n), begin(src) { }
+			inline const Complex& getComplexNumber(uint32 i) const { return begin[i]; }
+		};
+
+		Complex kRootsOfUnity[FFT_MAX_N];
+		void initRootsOfUnity()
+		{
+			const double scale = 6.2831853071795864769 / FFT_MAX_N;
+			for (int i = 0; i < FFT_MAX_N; ++i) {
+				kRootsOfUnity[i].re = cos(i * scale);
+				kRootsOfUnity[i].im = sin(i * scale);
+			}
+		}
+
+		inline uint32 getIndexOfPower(uint32 omegaIndex, uint32 pow) { return (omegaIndex * pow) % FFT_MAX_N; }
+
+		//`InputType` is either `Coefficients` (isReverse = false)  or  `ValueRepresentation` (isReverse = true for reverse transform)
+		template <bool isReverse, typename InputType>
+		void FFT(Complex* dst, InputType& src, uint32 omegaIndex)
+		{//Warning: src.n cannot be smaller than 4
+			if (src.n <= 4) {
+				Complex x = src.getComplexNumber(0);
+				Complex y = src.getComplexNumber(src.interval * 2);
+				Complex buffer0 = Complex::add(x, y);
+				Complex buffer1 = Complex::subtract(x, y);
+				x = src.getComplexNumber(src.interval);
+				y = src.getComplexNumber(src.interval * 3);
+				Complex buffer2 = Complex::add(x, y);
+				Complex buffer3 = Complex::subtract(x, y);
+				Complex wjAo = buffer2;
+				dst[0] = Complex::add(buffer0, wjAo);
+				dst[2] = Complex::subtract(buffer0, wjAo);
+				wjAo = !isReverse ? Complex(-buffer3.im, buffer3.re) : Complex(buffer3.im, -buffer3.re);
+				dst[1] = Complex::add(buffer1, wjAo);
+				dst[3] = Complex::subtract(buffer1, wjAo);
+				return;
+			}
+			auto srcBeginBackup = src.begin + src.interval;
+			src.interval <<= 1;
+			src.n >>= 1;
+			FFT<isReverse>(dst, src, getIndexOfPower(omegaIndex, 2));//A even
+			std::swap(src.begin, srcBeginBackup);
+			FFT<isReverse>(dst + src.n, src, getIndexOfPower(omegaIndex, 2));//A odd
+			std::swap(src.begin, srcBeginBackup);
+			for (uint32 j = 0; j < src.n; ++j) {
+				Complex wjAo = Complex::multiply(kRootsOfUnity[getIndexOfPower(omegaIndex, j)], (dst + src.n)[j]);
+				(dst + src.n)[j] = Complex::subtract(dst[j], wjAo);
+				dst[j] = Complex::add(dst[j], wjAo);
+			}
+			src.interval >>= 1;
+			src.n <<= 1;
+		}
+
+	}//namespace BigInteger_FFT_Precedures
+
+
+	void BigInteger::_FFTMultiply(BigInteger& dst, const BigInteger& lhs, const BigInteger& rhs, void* buffer)
+	{
+		if ((!lhs.size) | (!rhs.size)) { dst.size = 0; return; }
+		const uint32 n = _getMinimumCapacity(lhs.size + rhs.size) * BITS_OF_DWORD / FFT_WORD_BITLEN;
+		const uint32 kOmegaIndex = FFT_MAX_N / n;
+		if (0 == kOmegaIndex) { dst = _absMultiply(lhs, rhs); return; }
+		if (!_isRootsOfUnityInitialized) {//initialize  (1 + 0i) ^ (1/n)
+			BigInteger_FFT_Precedures::initRootsOfUnity();
+			_isRootsOfUnityInitialized = true;
+		}
+		bool newMemAlloced = (nullptr == buffer);
+		if (newMemAlloced) buffer = operator new(n * 2 * sizeof(BigInteger_FFT_Precedures::Complex));
+		BigInteger_FFT_Precedures::Complex* _buffer = reinterpret_cast<BigInteger_FFT_Precedures::Complex*>(buffer);
+		//multi-threading benefits little here
+		BigInteger_FFT_Precedures::Coefficients A(lhs, n);
+		BigInteger_FFT_Precedures::Complex* lhsValues = _buffer;
+		BigInteger_FFT_Precedures::FFT<false>(lhsValues, A, kOmegaIndex);
+		BigInteger_FFT_Precedures::Coefficients B(rhs, n);
+		BigInteger_FFT_Precedures::Complex* rhsValues = lhsValues + n;
+		BigInteger_FFT_Precedures::FFT<false>(rhsValues, B, kOmegaIndex);
+		for (uint32 j = 0; j < n; ++j, ++rhsValues)
+			*rhsValues = BigInteger_FFT_Precedures::Complex::multiply(*lhsValues++, *rhsValues);
+		BigInteger_FFT_Precedures::ValueRepresentation C(rhsValues - n, n);//C[i] = A[i] * B[i]
+		BigInteger_FFT_Precedures::Complex* products = _buffer;
+		BigInteger_FFT_Precedures::FFT<true>(products, C, FFT_MAX_N - kOmegaIndex);
+
+		uint32 newCapa = n / (BITS_OF_DWORD / FFT_WORD_BITLEN);
+		if (newCapa > dst.capacity) {
+			delete[] dst._valPtr;
+			dst._valPtr = new uint32[dst.capacity = newCapa];
+		}
+		unsigned long long t = 0;
+		static_assert(sizeof(unsigned long long) > sizeof(uint32), "");
+		const double reciprocal_of_n = 1.0 / n;
+		for (uint32 pieceIndex = 0; pieceIndex < newCapa; ++pieceIndex) {
+			//double er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
+			t += (unsigned long long)((products++)->re * reciprocal_of_n + 0.5);
+			dst._valPtr[pieceIndex] = t & ((1 << FFT_WORD_BITLEN) - 1);
+			t >>= FFT_WORD_BITLEN;
+			//er = abs(round((products)->re / n) - (products)->re / n); if (er > __dbgFFTMaxError) __dbgFFTMaxError = er;
+			t += (unsigned long long)((products++)->re * reciprocal_of_n + 0.5);
+			dst._valPtr[pieceIndex] |= (uint32(t) << FFT_WORD_BITLEN);
+			t >>= FFT_WORD_BITLEN;
+		}
+		dst._setSize(newCapa);
+
+		if (newMemAlloced) operator delete(buffer);
+	}
+
+#endif // FFT_MULTIPLICATION
+
 
 }//namespace UPMath

@@ -61,14 +61,13 @@ namespace UPmath
 		const BigInteger& operator>>=(const uint32 shift);
 		const BigInteger& operator<<=(const uint32 shift);
 		friend BigInteger operator*(const BigInteger& lhs, const BigInteger& rhs);
-		friend BigInteger operator/(const BigInteger& lhs, const BigInteger& rhs);
 		BigInteger absDivideAndSetThisToRemainder(const BigInteger& rhs);
-		const BigInteger& operator%=(const BigInteger&);
-		BigInteger operator%(const BigInteger& rhs) const { return BigInteger(*this) %= rhs; }
+		const BigInteger& operator%=(const BigInteger& rhs);
+		const BigInteger& operator/=(const BigInteger& rhs);
+		BigInteger sqrt(bool ceilling = false) const;
 		BigInteger pow(uint32 positive_exponent) const;
 		BigInteger modInverse(const BigInteger& m) const;//return BigInteger(0) when the inverse doesnot exist
-		//`m` must be a odd number and larger than BigInteger(2) to apply montgomeryModPow method
-		template<bool montgomeryModPow = false> BigInteger modPow(const BigInteger& exponent, const BigInteger& m) const;
+		BigInteger modPow(const BigInteger& exponent, const BigInteger& m) const;
 		struct _EEAstruct;
 		static BigInteger gcd(const BigInteger& a, const BigInteger& b);
 		static int JacobiSymbol(const BigInteger& upperArgument, const BigInteger& lowerArgument);
@@ -76,10 +75,12 @@ namespace UPmath
 		bool weakerBailliePSWPrimeTest() const;
 		BigInteger nextProbablePrime() const;
 
+		static const BigInteger kBigInteger_0;
+		static const BigInteger kBigInteger_1;
 	private:
 		uint32* _valPtr = nullptr;
 		class _SharedMemBigInteger;
-		void _push(uint32 value);
+		template <uint32 FractionalBitLen> friend class FixedPointNum;
 		void _setSize(uint32 maxPossibleSize);
 		void _absSubtract(const BigInteger& rhs);//only if abs(rhs) <= abs(*this)
 		static BigInteger _absMultiply(const BigInteger& lhs, const BigInteger& rhs);
@@ -128,13 +129,23 @@ namespace UPmath
 
 	template <class T> T operator+(const T& lhs, const T& rhs) { return T(lhs) += rhs; }
 	template <class T> T operator-(const T& lhs, const T& rhs) { return T(lhs) -= rhs; }
+	template <class T> T operator%(const T& lhs, const T& rhs) { return T(lhs) %= rhs; }
+	template <class T> T operator/(const T& lhs, const T& rhs) { return T(lhs) /= rhs; }
 	template <class T> T operator>>(const T& lhs, const uint32 shift) { return T(lhs) >>= shift; }
 	template <class T> T operator<<(const T& lhs, const uint32 shift) { return T(lhs) <<= shift; }
 
-	inline std::ostream& operator<<(std::ostream& os, const BigInteger& dt)
+	inline std::ostream& operator<<(std::ostream& os, const BigInteger& src)
 	{
-		os << dt.toString();
+		os << src.toString();
 		return os;
 	}
+	inline std::istream& operator>>(std::istream& is, BigInteger& dst)
+	{
+		std::string str;
+		is >> str;
+		dst = BigInteger(str);
+		return is;
+	}
 	
+
 }//namespace UPMath
